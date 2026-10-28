@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if item else "New" }} Item{% endblock %}
+{% block heading %}{{ "Edit" if item else "New" }} Catalogue Item{% endblock %}
+
+{% block content %}
+
+<form method="POST" class="card" enctype="multipart/form-data">
+  <div class="grid-2">
+    <label>Item code *
+      <input name="code" required value="{{ item.code if item else '' }}"
+             placeholder="e.g. CEM-001" style="text-transform:uppercase;"
+             {% if item %}readonly{% endif %}>
+      {% if item %}
+        <small style="color:#6B665B;">Code can only be changed if unused on a PR.</small>
+      {% endif %}
+    </label>
+    <label>Product name *
+      <input name="name" required value="{{ item.name if item else '' }}"
+             placeholder="e.g. Portland Cement 42.5N bag">
+    </label>
+    <label>Category
+      <select name="category_id">
+        <option value="">— none —</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}"
+                  {% if item and item.category_id == c.id %}selected{% endif %}>
+            {{ c.name }}{% if c.parent_id %} (sub){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Unit of measure
+      <select name="unit_id">
+        <option value="">— none —</option>
+        {% for u in units %}
+          <option value="{{ u.id }}"
+                  {% if item and item.unit_id == u.id %}selected{% endif %}>
+            {{ u.name }}{% if u.symbol %} ({{ u.symbol }}){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label style="grid-column: 1 / -1;">Description / specification
+      <input name="description" value="{{ item.description if item else '' }}"
+             placeholder="Optional details">
+    </label>
+    <label style="grid-column: 1 / -1;">Search keywords (optional)
+      <input name="keywords" value="{{ item.keywords if item else '' }}"
+             placeholder="Space-separated synonyms e.g. cement 42.5 portland">
+    </label>
+
+    <div style="grid-column: 1 / -1;">
+      <label>Thumbnail image (optional — helps site managers recognise the item)
+        <input type="file" name="image" accept=".jpg,.jpeg,.png">
+      </label>
+      {% if item and item.image_filename %}
+        <div style="margin-top:8px;">
+          <img src="{{ url_for('item_image', item_id=item.id) }}"
+               style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #D9D2C3;">
+          <p style="color:#6B665B;font-size:12px;margin:4px 0 0;">
+            Current thumbnail. Upload a new one to replace it.
+          </p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <button class="btn primary" type="submit">
+    {{ "Save changes" if item else "Create item" }}
+  </button>
+  <a class="btn" href="{{ url_for('admin_catalogue') }}">Cancel</a>
+</form>
+
+{% endblock %}

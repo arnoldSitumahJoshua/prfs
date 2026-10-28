@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Review item request{% endblock %}
+{% block heading %}Review item request{% endblock %}
+
+{% block content %}
+
+<!-- ===== The original request ===== -->
+<div class="card" style="background:#faf6ec;">
+  <p style="margin-top:0;color:#6B665B;font-size:12px;text-transform:uppercase;">Requested by</p>
+  <p style="margin:0 0 8px;">
+    <strong>{{ r.requester.name }}</strong>
+    {% if r.site %} — {{ r.site.name }} ({{ r.site.code }}){% endif %}
+    <br>
+    <span style="color:#6B665B;font-size:12px;">
+      {{ r.created_at.strftime('%d/%m/%Y %H:%M') }}
+    </span>
+  </p>
+
+  <p style="margin-top:16px;"><strong>Item name:</strong> {{ r.name }}</p>
+  {% if r.description %}
+    <p><strong>Description:</strong> {{ r.description }}</p>
+  {% endif %}
+  {% if r.unit_hint %}
+    <p><strong>Unit hint:</strong> {{ r.unit_hint }}</p>
+  {% endif %}
+</div>
+
+<!-- ===== Two actions: create item OR reject ===== -->
+<div class="grid-2" style="grid-template-columns: 2fr 1fr; gap:16px; align-items:start;">
+
+  <!-- Create catalogue item -->
+  <form method="POST"
+        action="{{ url_for('item_request_resolve', req_id=r.id) }}"
+        class="card">
+    <input type="hidden" name="action" value="create">
+    <h3 style="margin-top:0;">✅ Create catalogue item</h3>
+    <p style="color:#6B665B;font-size:13px;">
+      Fill in the catalogue details. Once saved, the item becomes searchable
+      immediately and the requester is notified.
+    </p>
+
+    <div class="grid-2">
+      <label>Item code *
+        <input name="code" required style="text-transform:uppercase;"
+               placeholder="e.g. ALU-001">
+      </label>
+      <label>Item name *
+        <input name="name" required value="{{ r.name }}">
+      </label>
+      <label>Category
+        <select name="category_id">
+          <option value="">— none —</option>
+          {% for c in categories %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Unit
+        <select name="unit_id">
+          <option value="">— none —</option>
+          {% for u in units %}
+            <option value="{{ u.id }}"
+                    {% if r.unit_hint and r.unit_hint|lower == u.name|lower %}selected{% endif %}>
+              {{ u.name }}{% if u.symbol %} ({{ u.symbol }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="grid-column: 1 / -1;">Description
+        <input name="description" value="{{ r.description or '' }}">
+      </label>
+      <label style="grid-column: 1 / -1;">Search keywords
+        <input name="keywords"
+               value="{{ r.name }} {{ r.unit_hint or '' }}">
+      </label>
+    </div>
+
+    <button class="btn primary" type="submit">
+      Create item &amp; resolve request
+    </button>
+  </form>
+
+  <!-- Reject -->
+  <form method="POST"
+        action="{{ url_for('item_request_resolve', req_id=r.id) }}"
+        class="card" style="background:#f8e6e3;border-color:#f0c8c1;">
+    <input type="hidden" name="action" value="reject">
+    <h3 style="margin-top:0;color:#9B3D2E;">❌ Reject request</h3>
+    <p style="color:#6B665B;font-size:13px;">
+      If you can't source this item, send the site a reason.
+    </p>
+    <label>Reason (sent to requester) *
+      <input name="note" required
+             placeholder="e.g. Not available — please use the closest alternative">
+    </label>
+    <button class="btn" type="submit"
+            style="background:#9B3D2E;color:#fff;"
+            onclick="return confirm('Reject this item request?');">
+      Reject request
+    </button>
+  </form>
+
+</div>
+
+<p style="margin-top:8px;">
+  <a class="btn" href="{{ url_for('item_requests') }}">← Back to all requests</a>
+</p>
+
+{% endblock %}

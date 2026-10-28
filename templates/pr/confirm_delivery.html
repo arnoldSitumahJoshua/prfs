@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}Confirm Delivery — {{ pr.number }}{% endblock %}
+{% block heading %}Confirm Delivery — {{ pr.number }}{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <p><strong>Site:</strong> {{ pr.site.name }} ({{ pr.site.code }})</p>
+  <p><strong>Requester:</strong> {{ pr.requester.name }}</p>
+  <p><strong>Status:</strong> <span class="chip">{{ pr.status }}</span></p>
+  {% if allow_excess %}
+    <p style="color:#9C7209;font-size:13px;">
+      ⚠ Excess receipt is enabled — you may receive more than ordered with a reason.
+    </p>
+  {% endif %}
+</div>
+
+<form method="POST" enctype="multipart/form-data" id="delivery-form">
+
+  <div class="card">
+    <h3>Delivery details</h3>
+    <div class="grid-2">
+      <label>Date received
+        <input type="date" name="received_date" value="{{ today }}" required>
+      </label>
+      <label>Supplier delivery-note ref (optional)
+        <input name="delivery_note_ref" placeholder="e.g. DN-2026-0451">
+      </label>
+      <label style="grid-column: 1 / -1;">Notes (optional)
+        <input name="notes" placeholder="Any comments about this delivery">
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Items received</h3>
+
+    <table class="table" id="delivery-table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Item</th>
+          <th>Unit</th>
+          <th style="text-align:right;">Requested</th>
+          <th style="text-align:right;">Ordered</th>
+          <th style="text-align:right;">Already received</th>
+          <th style="text-align:right;">Outstanding</th>
+          <th style="width:110px;">Received now</th>
+          <th style="width:110px;">Rejected</th>
+          <th style="width:180px;">Reject reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in eligible_lines %}
+        <tr data-outstanding="{{ l.outstanding_qty }}" data-line-id="{{ l.id }}">
+          <td>{{ l.item.code }}</td>
+          <td>{{ l.item.name }}</td>
+          <td>{{ l.item.unit.symbol if l.item.unit }}</td>
+          <td style="text-align:right;">{{ l.requested_qty }}</td>
+          <td style="text-align:right;">{{ l.ordered_qty or 0 }}</td>
+          <td style="text-align:right;">{{ l.received_qty or 0 }}</td>
+          <td style="text-align:right;">
+            <strong class="outstanding-cell">{{ l.outstanding_qty }}</strong>
+          </td>
+          <td>
+            <input type="number" name="received_{{ l.id }}"
+                   step="0.001" min="0"
+                   {% if not allow_excess %}max="{{ l.outstanding_qty }}"{% endif %}
+                   style="width:100%;"
+                   class="received-input"
+                   data-outstanding="{{ l.outstanding_qty }}"
+                   placeholder="0">
+          </td>
+          <td>
+            <input type="number" name="rejected_{{ l.id }}"
+                   step="0.001" min="0"
+                   style="width:100%;"
+                   class="rejected-input"
+                   placeholder="0">
+          </td>
+          <td>
+            <input name="reject_reason_{{ l.id }}"
+                   placeholder="e.g. broken / wrong size"
+                   style="width:100%;">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div style="margin-top:12px;">
+      <button type="button" class="btn" onclick="receiveAllInFull()">
+        ✅ Receive all in full
+      </button>
+      <span style="color:#6B665B;font-size:13px;margin-left:8px;">
+        (fills every outstanding quantity)
+      </span>
+    </div>
+  </div>
+
+  <!-- ===== Photos (DEL-05) ===== -->
+  <div class="card">
+    <h3>Photos <span class="chip">optional · up to 5</span></h3>
+    <p style="color:#6B665B;font-size:13px;margin-top:0;">
+      Snap the goods, the delivery note, or anything relevant. Max 10 MB each.
+    </p>
+    <label>Choose photos
+      <input type="file" name="photos" multiple
+             accept=".jpg,.jpeg,.png,.pdf"
+             onchange="showSelectedPhotos(this)">
+    </label>
+    <ul id="photo-list" style="color:#6B665B;font-size:13px;margin:8px 0 0;padding-left:18px;"></ul>
+  </div>
+
+  <!-- ===== Excess reason ===== -->
+  <div class="card" id="excess-card"
+       style="background:#fdf4e3;border-color:#e6d5a0;display:none;">
+    <h3 style="margin-top:0;color:#9C7209;">⚠ Excess receipt</h3>
+    <p style="color:#6B665B;font-size:13px;">
+      One or more lines exceed the outstanding quantity. Please explain why.
+    </p>
+    <label>Reason for excess *
+      <input name="excess_reason" id="excess-reason"
+             placeholder="e.g. supplier delivered 10 extra by mistake">
+    </label>
+  </div>
+
+  <div class="card" style="background:#faf6ec;">
+    <h3>Summary</h3>
+    <p id="summary-text" style="margin:0;font-size:15px;">
+      Enter quantities above to see the summary.
+    </p>
+  </div>
+
+  <div class="submit-bar">
+    <span id="submit-count" style="color:#6B665B;font-size:13px;">0 lines filled</span>
+    <button class="btn primary" type="submit"
+            onclick="return confirmDelivery(event);">
+      Confirm Delivery
+    </button>
+  </div>
+
+</form>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+(function () {
+  const ALLOW_EXCESS = {{ 'true' if allow_excess else 'false' }};
+
+  function getInputs() {
+    return document.querySelectorAll('.received-input');
+  }
+  function getRejected() {
+    return document.querySelectorAll('.rejected-input');
+  }
+
+  const summary     = document.getElementById('summary-text');
+  const submitCount = document.getElementById('submit-count');
+  const excessCard  = document.getElementById('excess-card');
+
+  function updateSummary() {
+    const inputs   = getInputs();
+    const rejected = getRejected();
+
+    let filled = 0;
+    let excess = false;
+    const parts = [];
+
+    inputs.forEach(inp => {
+      const row = inp.closest('tr');
+      const tds = row.querySelectorAll('td');
+      const itemName = tds[1] ? tds[1].textContent.trim() : '(item)';
+      const outstanding = parseFloat(inp.dataset.outstanding) || 0;
+      const rejInp = row.querySelector('.rejected-input');
+      const val = parseFloat(inp.value) || 0;
+      const rej = parseFloat(rejInp && rejInp.value) || 0;
+
+      if (val > 0 || rej > 0) {
+        filled++;
+
+        if (val > outstanding) {
+          if (ALLOW_EXCESS) {
+            excess = true;
+            parts.push(`<span style="color:#9C7209;">⚠ ${itemName}: ${val} (exceeds outstanding ${outstanding})</span>`);
+          } else {
+            inp.style.borderColor = '#9B3D2E';
+            inp.style.background  = '#f8e6e3';
+            parts.push(`<span style="color:#9B3D2E;">⚠ ${itemName}: ${val} exceeds outstanding ${outstanding}</span>`);
+          }
+        } else {
+          inp.style.borderColor = '';
+          inp.style.background  = '';
+        }
+
+        if (rej > val) {
+          if (rejInp) {
+            rejInp.style.borderColor = '#9B3D2E';
+            rejInp.style.background  = '#f8e6e3';
+          }
+          parts.push(`<span style="color:#9B3D2E;">⚠ ${itemName}: rejected ${rej} > received ${val}</span>`);
+        } else if (rejInp) {
+          rejInp.style.borderColor = '';
+          rejInp.style.background  = '';
+        }
+
+        if (rej > 0) {
+          parts.push(`&nbsp;&nbsp;${itemName}: accepted ${val - rej}, rejected ${rej}`);
+        }
+      }
+    });
+
+    summary.innerHTML = filled === 0
+      ? 'Enter quantities above to see the summary.'
+      : parts.join('<br>');
+    submitCount.textContent = `${filled} line${filled === 1 ? '' : 's'} filled`;
+
+    excessCard.style.display = excess ? 'block' : 'none';
+    if (!excess) {
+      const r = document.getElementById('excess-reason');
+      if (r) r.value = '';
+    }
+  }
+
+  // Wire up inputs
+  getInputs().forEach(i => i.addEventListener('input', updateSummary));
+  getRejected().forEach(i => i.addEventListener('input', updateSummary));
+
+  // ---- Global handlers (needed for the inline onclick= in the HTML) ----
+  window.receiveAllInFull = function () {
+    const inputs = getInputs();
+    inputs.forEach(inp => {
+      const outstanding = inp.dataset.outstanding || '0';
+      inp.value = outstanding;
+      // Fire input event so any listeners run
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    updateSummary();
+  };
+
+  window.receiveAllInFull = function () {
+  let filled = 0;
+  getInputs().forEach(inp => {
+    const outstanding = parseFloat(inp.dataset.outstanding) || 0;
+    if (outstanding <= 0) return;
+    inp.value = outstanding;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    filled++;
+  });
+  if (filled === 0) {
+    alert('Nothing outstanding to receive. These lines have no ordered quantity yet. Create a PO first.');
+  }
+};
+
+  window.showSelectedPhotos = function (input) {
+    const list = document.getElementById('photo-list');
+    list.innerHTML = '';
+    const files = Array.from(input.files).slice(0, 5);
+    files.forEach(f => {
+      const li = document.createElement('li');
+      li.textContent = `${f.name} (${(f.size / 1024).toFixed(0)} KB)`;
+      list.appendChild(li);
+    });
+    if (input.files.length > 5) {
+      const li = document.createElement('li');
+      li.style.color = '#9B3D2E';
+      li.textContent = `⚠ Only the first 5 photos will be uploaded.`;
+      list.appendChild(li);
+    }
+  };
+
+  window.confirmDelivery = function (e) {
+    const inputs   = getInputs();
+    const rejected = getRejected();
+
+    const overfilled = [...inputs].some(inp => {
+      const val = parseFloat(inp.value) || 0;
+      const out = parseFloat(inp.dataset.outstanding) || 0;
+      return val > out && !ALLOW_EXCESS;
+    });
+    if (overfilled) {
+      if (e) e.preventDefault();
+      alert('Some lines exceed their outstanding quantity.');
+      return false;
+    }
+
+    const anyFilled = [...inputs].some(i => parseFloat(i.value) > 0)
+                      || [...rejected].some(i => parseFloat(i.value) > 0);
+    if (!anyFilled) {
+      if (e) e.preventDefault();
+      alert('Enter at least one quantity.');
+      return false;
+    }
+
+    const excessPresent = excessCard.style.display === 'block';
+    if (excessPresent) {
+      const r = document.getElementById('excess-reason').value.trim();
+      if (!r) {
+        if (e) e.preventDefault();
+        alert('Please give a reason for the excess receipt.');
+        return false;
+      }
+    }
+
+    return confirm('Record this delivery? It cannot be edited afterwards.');
+  };
+
+  // Initialize summary on page load
+  updateSummary();
+})();
+</script>
+
+<style>
+  .submit-bar {
+    position: sticky; bottom: 0;
+    background: #fff; border: 1px solid #D9D2C3;
+    border-radius: 10px; padding: 12px 18px;
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 -6px 18px rgba(0,0,0,.06); margin-bottom: 12px;
+  }
+</style>
+{% endblock %}
+

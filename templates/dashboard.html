@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+
+{% block content %}
+
+<div class="tiles">
+  {% for label, count in tiles.items() %}
+    <a class="tile" href="{{ url_for('po_list') }}"
+       style="text-decoration:none;cursor:pointer;transition:transform .1s, box-shadow .1s;"
+       onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,.08)';"
+       onmouseout="this.style.transform='';this.style.boxShadow='';">
+      <h3>{{ count }}</h3>
+      <p>{{ label }}</p>
+    </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h3>Recent Orders</h3>
+  {% if recent %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>PO #</th>
+          <th>Site</th>
+          <th>Status</th>
+          <th>Expected</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for po in recent %}
+        <tr>
+          <td><strong>{{ po.number }}</strong></td>
+          <td>{{ po.site.code }}</td>
+          <td>
+            <span class="chip" style="background:
+              {% if po.status == 'Delivered' %}#e8f3ec;color:#3F7D4E;
+              {% elif po.status == 'Partially Delivered' %}#fdf4e3;color:#9C7209;
+              {% else %}#f3efe6;color:#6B665B;{% endif %}">
+              {{ po.status }}
+            </span>
+          </td>
+          <td>{{ po.expected_date.strftime('%d/%m/%Y') if po.expected_date else '—' }}</td>
+          <td><a href="{{ url_for('po_detail', po_id=po.id) }}">View Order</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No recent orders.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

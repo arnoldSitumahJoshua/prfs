@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Outstanding Items{% endblock %}
+{% block heading %}Outstanding Items{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a class="btn" href="{{ url_for('export_outstanding', fmt='xlsx') }}">📊 Excel</a>
+    <a class="btn" href="{{ url_for('export_outstanding', fmt='csv') }}">📄 CSV</a>
+    <a class="btn" href="{{ url_for('export_outstanding', fmt='pdf') }}">📕 PDF</a>
+  </div>
+</div>
+
+{% if current_user.role in ('officer', 'viewer') and sites %}
+<div class="card">
+  <form method="GET" style="display:flex;gap:12px;align-items:end;">
+    <label style="flex:1;margin:0;">Filter by site
+      <select name="site_id">
+        <option value="">— all sites —</option>
+        {% for s in sites %}
+          <option value="{{ s.id }}" {% if f_site == s.id %}selected{% endif %}>
+            {{ s.name }} ({{ s.code }})
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn primary" type="submit">Apply</button>
+    {% if f_site %}<a class="btn" href="{{ url_for('outstanding') }}">Clear</a>{% endif %}
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  {% if lines %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Site</th>
+          <th>PR #</th>
+          <th>PO #</th>
+          <th>Supplier</th>
+          <th>Code</th>
+          <th>Item</th>
+          <th>Expected</th>
+          <th style="text-align:right;">Ordered</th>
+          <th style="text-align:right;">Received</th>
+          <th style="text-align:right;">Outstanding</th>
+          <th style="text-align:right;">Days</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in lines %}
+        <tr>
+          <td>{{ l.pr.site.code }}</td>
+          <td>
+            <a href="{{ url_for('pr_detail', pr_id=l.pr.id) }}">
+              {{ l.pr.number }}
+            </a>
+          </td>
+          <td>
+            {% if l.po_lines is defined and l.po_lines %}
+              {% for pol in l.po_lines %}
+                <div style="font-size:12px;">
+                  <strong>{{ pol.po.number }}</strong>
+                </div>
+              {% endfor %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if l.po_lines is defined and l.po_lines %}
+              {% set supplier_names = [] %}
+              {% for pol in l.po_lines %}
+                {% if pol.po.supplier and pol.po.supplier.name not in supplier_names %}
+                  {% set _ = supplier_names.append(pol.po.supplier.name) %}
+                {% endif %}
+              {% endfor %}
+              {{ supplier_names|join(', ') if supplier_names else '—' }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ l.item.code }}</td>
+          <td>{{ l.item.name }}</td>
+          <td>
+            {% if l.expected_date %}
+              {{ l.expected_date.strftime('%d/%m/%Y') }}
+              {% if l.expected_date < today %}
+                <span class="chip"
+                      style="background:#f8e6e3;color:#9B3D2E;
+                             border-color:#f0c8c1;font-size:10px;">overdue</span>
+              {% endif %}
+            {% else %}
+              <span style="color:#6B665B;">—</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right;">{{ l.ordered_qty }}</td>
+          <td style="text-align:right;">{{ l.received_qty or 0 }}</td>
+          <td style="text-align:right;">
+            <strong style="color:#9B3D2E;">{{ l.outstanding_qty }}</strong>
+          </td>
+          <td style="text-align:right;">
+            {% set d = l.days_outstanding %}
+            {% if d > 0 %}{{ d }}{% else %}—{% endif %}
+          </td>
+          <td><span class="chip">{{ l.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">Nothing outstanding — everything ordered has been received. 🎉</p>
+  {% endif %}
+  {% include "_pagination.html" %}
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+const outstandingTotal = {{ pager.total if pager else lines|length }};
+const newestDrId = {{ lines[0].pr.id if lines else 0 }};
+
+async function pollOutstanding() {
+  try {
+    const r = await fetch('/api/outstanding-count');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.total !== outstandingTotal || data.newest_dr_id !== newestDrId) {
+      window.location.reload();
+    }
+  } catch (e) { /* silent */ }
+}
+
+setInterval(pollOutstanding, 15000);
+</script>
+{% endblock %}

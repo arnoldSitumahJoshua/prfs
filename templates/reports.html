@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block heading %}Reports{% endblock %}
+
+{% block content %}
+
+{% if not is_officer and site %}
+<div class="card" style="background:#faf6ec;border-color:#e6d5a0;">
+  <p style="margin:0;color:#6C5A20;font-size:13px;">
+    <strong>Scoped to your site:</strong> {{ site.name }} ({{ site.code }}).
+  </p>
+</div>
+{% endif %}
+
+<!-- ===== Filter bar (RPT-04) ===== -->
+<div class="card">
+  <form method="GET">
+    <div class="grid-2">
+      {% if is_officer %}
+      <label>Site
+        <select name="site_id">
+          <option value="">— all sites —</option>
+          {% for s in sites %}
+            <option value="{{ s.id }}"
+                    {% if filters.site_id == s.id %}selected{% endif %}>
+              {{ s.name }} ({{ s.code }})
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Supplier
+        <select name="supplier_id">
+          <option value="">— all suppliers —</option>
+          {% for s in suppliers %}
+            <option value="{{ s.id }}"
+                    {% if filters.supplier_id == s.id %}selected{% endif %}>
+              {{ s.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+
+      {% if is_officer %}
+      <label>Category
+        <select name="category_id">
+          <option value="">— all categories —</option>
+          {% for c in categories %}
+            <option value="{{ c.id }}"
+                    {% if filters.category_id == c.id %}selected{% endif %}>
+              {{ c.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      
+      <label>Status
+        <select name="status">
+          <option value="">— any status —</option>
+          {% for st in ["Submitted","In Progress","Partially Received","Received (Fulfilled)","Cancelled","Returned for Amendment"] %}
+            <option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>From date
+        <input type="date" name="date_from" value="{{ filters.date_from }}">
+      </label>
+      <label>To date
+        <input type="date" name="date_to" value="{{ filters.date_to }}">
+      </label>
+    </div>
+
+    <div style="margin-top:12px;">
+      <button class="btn primary" type="submit">Apply filters</button>
+      <a class="btn" href="{{ url_for('reports') }}">Clear</a>
+    </div>
+  </form>
+</div>
+
+<!-- ===== Delivery performance ===== -->
+<div class="card">
+  <h3>Delivery performance</h3>
+  <p style="color:#6B665B;font-size:13px;">
+    Time between milestones on the last 200 PRs. Shown as <strong>Xh Ym</strong>.
+  </p>
+
+  {% if perf_rows %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>PR #</th>
+          <th>Site</th>
+          <th>Submitted (EAT)</th>
+          <th>→ Ordered</th>
+          <th>→ Dispatched</th>
+          <th>→ Received</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in perf_rows %}
+        <tr>
+          <td>{{ r[0] }}</td>
+          <td>{{ r[1] }}</td>
+          <td>{{ r[2] }}</td>
+          <td>{{ r[3] }}</td>
+          <td>{{ r[4] }}</td>
+          <td>{{ r[5] }}</td>
+          <td><span class="chip">{{ r[6] }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No PRs match the filter.</p>
+  {% endif %}
+</div>
+
+<!-- ===== Delivery Receipts ===== -->
+<div class="card">
+  <h3>Delivery Receipts <span class="chip">{{ receipt_rows|length }}</span></h3>
+
+  {% if receipt_rows %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>DR #</th>
+          <th>PR #</th>
+          <th>Site</th>
+          <th>Received (EAT)</th>
+          <th>By</th>
+          <th style="text-align:right;">Lines</th>
+          <th style="text-align:right;">Total received</th>
+          <th style="text-align:right;">Rejected</th>
+          <th>Note</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in receipt_rows %}
+        <tr>
+          <td>
+            {% if r.excess %}<span title="Excess receipt">⚠</span>{% endif %}
+            <strong>{{ r.number }}</strong>
+          </td>
+          <td>
+            {% if r.pr_id %}
+              <a href="{{ url_for('pr_detail', pr_id=r.pr_id) }}">{{ r.pr_number }}</a>
+            {% else %}{{ r.pr_number }}{% endif %}
+          </td>
+          <td>{{ r.site }}</td>
+          <td>{{ r.received_at|eat }}</td>
+          <td>{{ r.received_by }}</td>
+          <td style="text-align:right;">{{ r.line_count }}</td>
+          <td style="text-align:right;"><strong>{{ '%.2f'|format(r.total_qty) }}</strong></td>
+          <td style="text-align:right;">
+            {% if r.total_rejected > 0 %}
+              <span style="color:#9B3D2E;">{{ '%.2f'|format(r.total_rejected) }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="font-size:12px;">{{ r.note_ref }}</td>
+          <td>
+            <a class="btn small" href="{{ url_for('dr_pdf', dr_id=r.id) }}"
+               title="Download DR PDF">📄</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No deliveries match the filter.</p>
+  {% endif %}
+</div>
+
+<!-- ===== Cancelled PRs ===== -->
+<div class="card">
+  <h3>Cancelled PRs <span class="chip">{{ declined_rows|length }}</span></h3>
+  {% if declined_rows %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>PR #</th>
+          <th>Site</th>
+          <th>Reason</th>
+          <th>Submitted (EAT)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in declined_rows %}
+        <tr>
+          <td><a href="{{ url_for('pr_detail', pr_id=r.pr_id) }}">{{ r.number }}</a></td>
+          <td>{{ r.site }}</td>
+          <td>{{ r.reason }}</td>
+          <td>{{ r.when|eat if r.when else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">Nothing cancelled. 🎉</p>
+  {% endif %}
+</div>
+
+<!-- ===== Supplier summary ===== -->
+{% if is_officer %}
+<div class="card">
+  <h3>Supplier summary</h3>
+  {% if supplier_rows %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>Supplier</th>
+          <th style="text-align:right;">POs</th>
+          <th style="text-align:right;">Total ordered</th>
+          <th>Contact</th>
+          <th>Phone</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in supplier_rows %}
+        <tr>
+          <td><strong>{{ r.name }}</strong></td>
+          <td style="text-align:right;">{{ r.count }}</td>
+          <td style="text-align:right;">{{ '%.2f'|format(r.total) }}</td>
+          <td>{{ r.contact }}</td>
+          <td>{{ r.phone }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No POs match the filter.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ===== Registers ===== -->
+<div class="card">
+  <h3>Registers</h3>
+  <div class="grid-2" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+    <a class="tile" href="{{ url_for('pr_list') }}" style="text-decoration:none;">
+      <h3>📋</h3>
+      <p style="color:#2B2B2B;font-size:14px;font-weight:600;">PR Register</p>
+      <p style="color:#6B665B;">All purchase requisitions</p>
+    </a>
+    {% if is_officer %}
+    <a class="tile" href="{{ url_for('po_list') }}" style="text-decoration:none;">
+      <h3>🧾</h3>
+      <p style="color:#2B2B2B;font-size:14px;font-weight:600;">PO Register</p>
+      <p style="color:#6B665B;">All purchase orders</p>
+    </a>
+    {% endif %}
+    <a class="tile" href="{{ url_for('outstanding') }}" style="text-decoration:none;">
+      <h3>📦</h3>
+      <p style="color:#2B2B2B;font-size:14px;font-weight:600;">Outstanding</p>
+      <p style="color:#6B665B;">Items awaiting delivery</p>
+    </a>
+    <a class="tile" href="{{ url_for('export_outstanding', fmt='pdf') }}"
+       style="text-decoration:none;background:#faf6ec;">
+      <h3>📕</h3>
+      <p style="color:#2B2B2B;font-size:14px;font-weight:600;">Weekly Outstanding PDF</p>
+      <p style="color:#6B665B;">Manual download</p>
+    </a>
+  </div>
+</div>
+
+<!-- ===== PR Register (RPT-02) ===== -->
+<div class="card">
+  <h3>PR Register <span class="chip">{{ pr_register|length }}</span></h3>
+  {% if pr_register %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>PR #</th>
+          <th>Site</th>
+          <th>Requester</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Required by</th>
+          <th>Submitted</th>
+          <th>Lines</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pr in pr_register %}
+        <tr>
+          <td><a href="{{ url_for('pr_detail', pr_id=pr.id) }}">{{ pr.number or '(draft)' }}</a></td>
+          <td>{{ pr.site.code }}</td>
+          <td>{{ pr.requester.name }}</td>
+          <td><span class="chip">{{ pr.status }}</span></td>
+          <td>{{ pr.priority }}</td>
+          <td>{{ pr.required_by }}</td>
+          <td>{{ pr.submitted_at|eat if pr.submitted_at else '—' }}</td>
+          <td>{{ pr.lines|length }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No PRs match the filter.</p>
+  {% endif %}
+</div>
+
+<!-- ===== PO Register (RPT-02) ===== -->
+{% if is_officer %}
+<div class="card">
+  <h3>PO Register <span class="chip">{{ po_register|length }}</span></h3>
+  {% if po_register %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>PO #</th>
+          <th>Supplier</th>
+          <th>PO date</th>
+          <th>Expected</th>
+          <th>Lines</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for po in po_register %}
+        <tr>
+          <td><a href="{{ url_for('po_detail', po_id=po.id) }}">{{ po.number }}</a></td>
+          <td>{{ po.supplier.name if po.supplier else '—' }}</td>
+          <td>{{ po.po_date.strftime('%d/%m/%Y') if po.po_date else '—' }}</td>
+          <td>{{ po.expected_date.strftime('%d/%m/%Y') if po.expected_date else '—' }}</td>
+          <td>{{ po.lines|length }}</td>
+          <td><span class="chip">{{ po.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No POs match the filter.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ===== Outstanding Register (RPT-02) ===== -->
+<div class="card">
+  <h3>Outstanding Register <span class="chip">{{ out_register|length }}</span></h3>
+  {% if out_register %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>Site</th>
+          <th>PR #</th>
+          <th>Item</th>
+          <th style="text-align:right;">Ordered</th>
+          <th style="text-align:right;">Received</th>
+          <th style="text-align:right;">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in out_register %}
+        <tr>
+          <td>{{ l.pr.site.code }}</td>
+          <td><a href="{{ url_for('pr_detail', pr_id=l.pr.id) }}">{{ l.pr.number }}</a></td>
+          <td>{{ l.item.name }}</td>
+          <td style="text-align:right;">{{ l.ordered_qty }}</td>
+          <td style="text-align:right;">{{ l.received_qty or 0 }}</td>
+          <td style="text-align:right;"><strong style="color:#9B3D2E;">{{ l.outstanding_qty }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">Nothing outstanding. 🎉</p>
+  {% endif %}
+</div>
+
+{% endblock %}

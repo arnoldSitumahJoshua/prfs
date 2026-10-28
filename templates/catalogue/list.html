@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Catalogue{% endblock %}
+{% block heading %}Item Catalogue{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <form method="GET" style="display:flex;gap:12px;align-items:end;">
+    <label style="flex:1;margin:0;">Search items
+      <input name="q" value="{{ q }}" placeholder="Name, code or keyword..."
+             autofocus autocomplete="off">
+    </label>
+    <button class="btn primary" type="submit">Search</button>
+    {% if q %}<a class="btn" href="{{ url_for('catalogue') }}">Clear</a>{% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <p style="margin-top:0;color:#6B665B;font-size:13px;">
+    {{ pager.total if pager else items|length }}
+    item{{ 's' if (pager.total if pager else items|length) != 1 else '' }}
+    {% if q %} matching "<strong>{{ q }}</strong>"{% endif %}
+  </p>
+
+  {% if items %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:120px;">Code</th>
+          <th>Name</th>
+          <th>Category</th>
+          <th style="width:110px;">Unit</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td><strong>{{ item.code }}</strong></td>
+          <td>{{ item.name }}</td>
+          <td>{{ item.category.name if item.category else '—' }}</td>
+          <td>{{ item.unit.name if item.unit else '—' }}
+              {% if item.unit and item.unit.symbol %}<small>({{ item.unit.symbol }})</small>{% endif %}
+          </td>
+          <td style="color:#6B665B;font-size:13px;">
+            {{ item.description[:80] ~ '…' if item.description and item.description|length > 80
+               else item.description or '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">
+      {% if q %}No items match "<strong>{{ q }}</strong>".{% else %}No items in the catalogue yet.{% endif %}
+    </p>
+  {% endif %}
+
+  {% include "_pagination.html" %}
+</div>
+
+{% endblock %}

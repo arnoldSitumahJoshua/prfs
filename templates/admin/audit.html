@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Audit Log{% endblock %}
+{% block heading %}Audit Log{% endblock %}
+
+{% block content %}
+
+
+<div class="card">
+  <p style="margin-top:0;color:#6B665B;font-size:13px;">
+    Showing <strong>{{ logs|length }}</strong> most recent
+    entr{{ 'y' if logs|length == 1 else 'ies' }}
+    (max 500 per page).
+  </p>
+
+  {% if logs %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th style="width:130px;">When</th>
+          <th style="width:160px;">User</th>
+          <th style="width:130px;">Action</th>
+          <th style="width:90px;">Entity</th>
+          <th>Details</th>
+          <th style="width:110px;">IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.at|eat }}</td>
+          <td>
+            {% if log.actor_id %}
+              {% set actor = actors | selectattr('id', 'equalto', log.actor_id) | first %}
+              {{ actor.name if actor else 'User #' ~ log.actor_id }}
+              <br><small style="color:#6B665B;">{{ log.role or '—' }}</small>
+            {% else %}
+              <em style="color:#6B665B;">System</em>
+            {% endif %}
+          </td>
+          <td>
+            {% if log.action == 'LOGIN' %}
+              <span class="chip" style="background:#e8f3ec;color:#3F7D4E;border-color:#c5e0ce;">
+                {{ log.action }}
+              </span>
+            {% elif log.action in ('LOGOUT',) %}
+              <span class="chip">{{ log.action }}</span>
+            {% elif log.action in ('CREATE_USER','CREATE_ITEM','CREATE_PO','CREATE_CATEGORY','CREATE_UNIT','SUBMIT_PR') %}
+              <span class="chip" style="background:#f3efe6;color:#9C7209;border-color:#d9c98a;">
+                {{ log.action }}
+              </span>
+            {% elif log.action in ('RESET_PASSWORD','UNLOCK_USER','TOGGLE_ITEM','UPDATE_STATUS','UPDATE_ITEM','CHANGE_PASSWORD') %}
+              <span class="chip" style="background:#fdf4e3;color:#9C7209;">
+                {{ log.action }}
+              </span>
+            {% elif log.action in ('CONFIRM_DELIVERY',) %}
+              <span class="chip" style="background:#e8f3ec;color:#3F7D4E;border-color:#c5e0ce;">
+                {{ log.action }}
+              </span>
+            {% else %}
+              <span class="chip">{{ log.action }}</span>
+            {% endif %}
+          </td>
+          <td>{{ log.entity or '—' }}</td>
+          <td>
+            {% if log.old_value and log.new_value %}
+              <span style="color:#6B665B;">{{ log.old_value }}</span>
+              →
+              <strong>{{ log.new_value }}</strong>
+            {% elif log.new_value %}
+              <strong>{{ log.new_value }}</strong>
+            {% elif log.old_value %}
+              <span style="color:#6B665B;">{{ log.old_value }}</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td style="font-size:11px;color:#6B665B;">{{ log.ip or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No audit entries match your filters.</p>
+  {% endif %}
+  {% include "_pagination.html" %}
+</div>
+
+{% endblock %}

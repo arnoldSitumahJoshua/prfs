@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Catalogue Manager{% endblock %}
+{% block heading %}Catalogue Manager{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+    <a class="btn primary" href="{{ url_for('admin_catalogue_new') }}">+ New item</a>
+  </div>
+
+  <form method="GET" style="display:flex;gap:12px;align-items:end;">
+    <label style="flex:1;margin:0;">Search
+      <input name="q" value="{{ q }}" placeholder="Name, code or keyword...">
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;margin:0;">
+      <input type="checkbox" name="inactive" value="1"
+             {% if show_inactive %}checked{% endif %}
+             style="width:auto;">
+      Show inactive
+    </label>
+    <button class="btn primary" type="submit">Search</button>
+    {% if q or show_inactive %}
+      <a class="btn" href="{{ url_for('admin_catalogue') }}">Reset</a>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card">
+    <p style="margin-top:0;color:#6B665B;font-size:13px;">
+    {{ pager.total if pager else items|length }}
+    item{{ 's' if (pager.total if pager else items|length) != 1 else '' }} total.
+  </p>
+
+  {% if items %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Unit</th>
+          <th>Status</th>
+          <th style="width:200px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td><strong>{{ item.code }}</strong></td>
+          <td>{{ item.name }}</td>
+          <td>{{ item.category.name if item.category else '—' }}</td>
+          <td>
+            {{ item.unit.name if item.unit else '—' }}
+            {% if item.unit and item.unit.symbol %}<small>({{ item.unit.symbol }})</small>{% endif %}
+          </td>
+          <td>
+            {% if item.active %}
+              <span class="chip" style="background:#e8f3ec;color:#3F7D4E;border-color:#c5e0ce;">Active</span>
+            {% else %}
+              <span class="chip" style="background:#f8e6e3;color:#9B3D2E;border-color:#f0c8c1;">Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <a class="btn small" href="{{ url_for('admin_catalogue_edit', item_id=item.id) }}">Edit</a>
+            <form method="POST" action="{{ url_for('admin_catalogue_toggle', item_id=item.id) }}"
+                  style="display:inline;">
+              <button class="btn small" type="submit">
+                {% if item.active %}Deactivate{% else %}Activate{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No items match.</p>
+  {% endif %}
+  {% include "_pagination.html" %}
+</div>
+
+{% endblock %}

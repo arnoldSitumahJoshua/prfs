@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}System Health{% endblock %}
+{% block heading %}System Health{% endblock %}
+
+{% block content %}
+
+<!-- ===== Failed emails ===== -->
+<div class="card">
+  <h3>Failed emails <span class="chip">{{ failed_emails|length }}</span></h3>
+  <p style="color:#6B665B;font-size:13px;">
+    Emails that failed to send. (Email sending is currently deferred — this
+    panel will populate once SMTP is configured.)
+  </p>
+
+  {% if failed_emails %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>PR</th>
+          <th>Recipient</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in failed_emails %}
+        <tr>
+          <td>{{ e.at|eat if e.at else '—' }}</td>
+          <td>{{ e.pr_id or '—' }}</td>
+          <td>{{ e.recipient or '—' }}</td>
+          <td>{{ e.detail or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No failed emails. ✅</p>
+  {% endif %}
+</div>
+
+<!-- ===== Upload issues ===== -->
+<div class="card">
+  <h3>Missing uploads <span class="chip">{{ upload_issues|length }}</span></h3>
+  <p style="color:#6B665B;font-size:13px;">
+    Files that are referenced in the database but missing on disk
+    (uploaded folder).
+  </p>
+
+  {% if upload_issues %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Missing filename</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in upload_issues %}
+        <tr>
+          <td>{{ u.kind }}</td>
+          <td>{{ u.label }}</td>
+          <td style="font-family:monospace;font-size:12px;">{{ u.missing }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">All uploads are on disk. ✅</p>
+  {% endif %}
+</div>
+
+<!-- ===== Recent errors ===== -->
+<div class="card">
+  <h3>Recent error-related audit entries <span class="chip">{{ recent_errors|length }}</span></h3>
+
+  {% if recent_errors %}
+    <table class="table" style="font-size:13px;">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Action</th>
+          <th>Entity</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in recent_errors %}
+        <tr>
+          <td>{{ log.at|eat }}</td>
+          <td><span class="chip">{{ log.action }}</span></td>
+          <td>{{ log.entity or '—' }}</td>
+          <td>{{ log.new_value or log.old_value or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">Nothing to report. ✅</p>
+  {% endif %}
+</div>
+
+<p style="margin-top:16px;">
+  <a class="btn" href="{{ url_for('admin_settings') }}">← Back to settings</a>
+</p>
+
+{% endblock %}

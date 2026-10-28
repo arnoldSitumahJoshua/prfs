@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Units{% endblock %}
+{% block heading %}Units of Measure{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <h3>Add unit</h3>
+  <form method="POST">
+    <div class="grid-2">
+      <label>Unit name *
+        <input name="name" required placeholder="e.g. Bag, Metre, Tonne">
+      </label>
+      <label>Symbol
+        <input name="symbol" placeholder="e.g. bag, m, t">
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;grid-column:1/-1;">
+        <input type="checkbox" name="allows_decimal" style="width:auto;">
+        Allows decimal quantities (e.g. 2.5 tonnes)
+      </label>
+    </div>
+    <button class="btn primary" type="submit">Add unit</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>All units</h3>
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>Symbol</th><th>Decimals allowed</th></tr>
+    </thead>
+    <tbody>
+      {% for u in units %}
+      <tr>
+        <td>{{ u.name }}</td>
+        <td>{{ u.symbol or '—' }}</td>
+        <td>{{ 'Yes' if u.allows_decimal else 'No' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

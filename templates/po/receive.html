@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Receive Order {{ po.number }}{% endblock %}
+{% block heading %}Receive Delivery — {{ po.number }}{% endblock %}
+
+{% block content %}
+<form method="POST">
+  <div class="card">
+    <p><strong>Supplier:</strong> {{ po.supplier.name }}</p>
+    <p><strong>Expected:</strong> {{ po.expected_date.strftime('%d/%m/%Y') if po.expected_date else '—' }}</p>
+    <div class="grid-2" style="margin-top:16px;">
+      <label>Delivery Note Ref<input name="delivery_note_ref" placeholder="e.g. DN-12345"></label>
+      <label>Notes<input name="notes" placeholder="Any comments"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th style="text-align:right;">Ordered</th>
+          <th style="text-align:right;">Prev. Received</th>
+          <th style="text-align:right;color:#9C7209;">Outstanding</th>
+          <th>Receive Now</th>
+          <th>Damaged/Rejected</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in po.lines %}
+        <tr>
+          <td>{{ l.item.name }}<br><small>{{ l.item.code }}</small></td>
+          <td style="text-align:right;">{{ l.ordered_qty }}</td>
+          <td style="text-align:right;">{{ l.received_qty }}</td>
+          <td style="text-align:right;font-weight:bold;">{{ l.outstanding_qty }}</td>
+          <td>
+            <input type="number" name="received_{{ l.id }}" step="0.01" min="0" max="{{ l.outstanding_qty }}" style="width:100%;" placeholder="0">
+          </td>
+          <td>
+            <input type="number" name="rejected_{{ l.id }}" step="0.01" min="0" style="width:100%;" placeholder="0">
+          </td>
+          <td>
+            <input name="reason_{{ l.id }}" style="width:100%;" placeholder="If damaged">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="submit-bar">
+    <span></span>
+    <button class="btn primary" type="submit" onclick="return confirm('Confirm these quantities?');">Confirm Delivery</button>
+  </div>
+</form>
+{% endblock %}

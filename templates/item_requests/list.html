@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Item Requests{% endblock %}
+{% block heading %}Item Requests{% endblock %}
+
+{% block content %}
+
+{% if current_user.role == 'site' %}
+<div class="card">
+  <h3>Can't find an item?</h3>
+  <p style="color:#6B665B;font-size:13px;">
+    Tell procurement what you need. They'll add it to the catalogue and it
+    will become searchable on your next PR.
+  </p>
+  <form method="POST">
+    <div class="grid-2">
+      <label>Item name *
+        <input name="name" required placeholder="e.g. Aluminium window 1.2m">
+      </label>
+      <label>Unit (if you know)
+        <input name="unit_hint" placeholder="e.g. piece, metre, kg">
+      </label>
+      <label style="grid-column: 1 / -1;">Description
+        <input name="description"
+               placeholder="Any details that help procurement find it — size, brand, spec">
+      </label>
+    </div>
+    <button class="btn primary" type="submit">Send request to procurement</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h3 style="margin:0;">
+      {% if current_user.role == 'officer' %}All requests{% else %}My requests{% endif %}
+      <span class="chip">{{ pager.total if pager else reqs|length }}</span>
+    </h3>
+    <form method="GET" style="display:flex;gap:8px;">
+      <select name="status" style="width:auto;">
+        <option value="">— all —</option>
+        <option value="Open"     {% if status_filter == 'Open' %}selected{% endif %}>Open</option>
+        <option value="Resolved" {% if status_filter == 'Resolved' %}selected{% endif %}>Resolved</option>
+        <option value="Rejected" {% if status_filter == 'Rejected' %}selected{% endif %}>Rejected</option>
+      </select>
+      <button class="btn" type="submit">Filter</button>
+    </form>
+  </div>
+
+  {% if reqs %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Item requested</th>
+          {% if current_user.role == 'officer' %}<th>Site</th>{% endif %}
+          <th>Requested by</th>
+          <th>When</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reqs %}
+        <tr>
+          <td>
+            <strong>{{ r.name }}</strong>
+            {% if r.description %}
+              <br><small style="color:#6B665B;">{{ r.description }}</small>
+            {% endif %}
+            {% if r.unit_hint %}
+              <br><small style="color:#6B665B;">Unit hint: {{ r.unit_hint }}</small>
+            {% endif %}
+          </td>
+          {% if current_user.role == 'officer' %}
+            <td>{{ r.site.code if r.site else '—' }}</td>
+          {% endif %}
+          <td>{{ r.requester.name if r.requester else '—' }}</td>
+          <td>{{ r.created_at|eat }}</td>
+          <td>
+            {% if r.status == 'Open' %}
+              <span class="chip" style="background:#fdf4e3;color:#9C7209;">Open</span>
+            {% elif r.status == 'Resolved' %}
+              <span class="chip" style="background:#e8f3ec;color:#3F7D4E;">Resolved</span>
+            {% else %}
+              <span class="chip" style="background:#f8e6e3;color:#9B3D2E;">Rejected</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if current_user.role == 'officer' and r.status == 'Open' %}
+              <a class="btn small primary"
+                 href="{{ url_for('item_request_detail', req_id=r.id) }}">
+                Review
+              </a>
+            {% elif r.status == 'Resolved' and r.resolved_item %}
+              <span style="font-size:12px;color:#3F7D4E;">
+                ✓ Added as <strong>{{ r.resolved_item.code }}</strong>
+              </span>
+            {% elif r.status == 'Rejected' and r.resolution_note %}
+              <span style="font-size:12px;color:#9B3D2E;">
+                {{ r.resolution_note }}
+              </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">
+      {% if current_user.role == 'officer' %}
+        No item requests match the filter.
+      {% else %}
+        You haven't sent any item requests yet.
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% include "_pagination.html" %}
+</div>
+
+{% endblock %}

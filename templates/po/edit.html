@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ po.number }}{% endblock %}
+{% block heading %}Edit PO {{ po.number }}{% endblock %}
+
+{% block content %}
+
+<form method="POST" class="card">
+  <h3>PO details</h3>
+  <div class="grid-2">
+    <label>PO number *
+      <input name="number" required value="{{ po.number }}">
+    </label>
+    <label>Supplier
+      <select name="supplier_id">
+        <option value="">— none —</option>
+        {% for s in suppliers %}
+          <option value="{{ s.id }}" {% if po.supplier_id == s.id %}selected{% endif %}>
+            {{ s.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>PO date
+      <input type="date" name="po_date"
+             value="{{ po.po_date.isoformat() if po.po_date else '' }}">
+    </label>
+    <label>Expected delivery
+      <input type="date" name="expected_date"
+             value="{{ po.expected_date.isoformat() if po.expected_date else '' }}">
+    </label>
+    <label style="grid-column: 1 / -1;">Remarks
+      <input name="remarks" value="{{ po.remarks or '' }}">
+    </label>
+  </div>
+
+  <p style="color:#6B665B;font-size:13px;">
+    Note: line quantities are not editable here. To adjust the linked PR lines,
+    cancel this PO and create a new one.
+  </p>
+
+  <button class="btn primary" type="submit">Save changes</button>
+  <a class="btn" href="{{ url_for('po_detail', po_id=po.id) }}">Cancel</a>
+</form>
+
+{% endblock %}

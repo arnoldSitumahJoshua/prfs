@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}{{ po.number }}{% endblock %}
+{% block heading %}Purchase Order {{ po.number }}{% endblock %}
+
+{% block content %}
+
+<!-- ===== PO header ===== -->
+<div class="card">
+  <div class="grid-2">
+    <div>
+      <p><strong>Destination Site:</strong> {{ po.site.name }} ({{ po.site.code }})</p>
+      <p><strong>Supplier:</strong> {{ po.supplier.name if po.supplier else '—' }}</p>
+      <p><strong>PO date:</strong> {{ po.po_date.strftime('%d/%m/%Y') if po.po_date else '—' }}</p>
+      <p><strong>Expected:</strong> {{ po.expected_date.strftime('%d/%m/%Y') if po.expected_date else '—' }}</p>
+    </div>
+    <div>
+      <p><strong>Status:</strong> <span class="chip" style="background:#f3efe6;">{{ po.status }}</span></p>
+      <p><strong>Created:</strong> {{ po.created_at|eat if po.created_at else '—' }}</p>
+      {% if po.dispatch_date %}
+        <p><strong>Dispatched:</strong> {{ po.dispatch_date.strftime('%d/%m/%Y') }}</p>
+      {% endif %}
+      {% if po.delivery_note_ref %}
+        <p><strong>Delivery Note:</strong> {{ po.delivery_note_ref }}</p>
+      {% endif %}
+    </div>
+  </div>
+  {% if po.remarks %}
+    <p><strong>Remarks:</strong> {{ po.remarks }}</p>
+  {% endif %}
+</div>
+
+<!-- ===== Actions ===== -->
+<div class="card">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    
+    {% if current_user.role == 'officer' %}
+      
+        {% if po.status in ('Ordered', 'Dispatched', 'Partially Delivered')
+            and po.lines|selectattr('remaining_to_ship', 'gt', 0)|list %}
+        <details class="card" style="margin:0;padding:8px 12px;">
+          <summary style="cursor:pointer;font-weight:600;">🚚 Record a shipment</summary>
+          <form method="POST" action="{{ url_for('po_dispatch', po_id=po.id) }}" style="margin-top:10px;">
+            <table class="table" style="font-size:13px;">
+              <thead><tr><th>Item</th><th style="text-align:right;">Ordered</th>
+                <th style="text-align:right;">Already shipped</th>
+                <th style="text-align:right;">Left to ship</th><th>Ship now</th></tr></thead>
+              <tbody>
+                {% for l in po.lines %}
+                <tr>
+                  <td>{{ l.item.name }}</td>
+                  <td style="text-align:right;">{{ l.ordered_qty }}</td>
+                  <td style="text-align:right;">{{ l.shipped_qty }}</td>
+                  <td style="text-align:right;"><strong>{{ l.remaining_to_ship }}</strong></td>
+                  <td>
+                    {% if l.remaining_to_ship > 0 %}
+                      <input type="number" name="ship_{{ l.id }}" min="0" step="any"
+                             max="{{ l.remaining_to_ship }}" style="width:100px;">
+                    {% else %}<em>fully shipped</em>{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+              <label style="margin:0;">Dispatch date
+                <input type="date" name="dispatch_date" value="{{ po.po_date.isoformat() if false else '' }}">
+              </label>
+              <label style="margin:0;">Delivery note ref<input name="delivery_note_ref"></label>
+              <label style="margin:0;">Tracking ref<input name="tracking_ref"></label>
+            </div>
+            <button class="btn primary" type="submit" style="margin-top:10px;">Save shipment</button>
+          </form>
+        </details>
+      {% endif %}
+
+
+
+      {% if po.status == 'Delivered' %}
+        <form method="POST" action="{{ url_for('po_complete', po_id=po.id) }}" style="display:inline;">
+          <button class="btn primary" type="submit" style="background:#3F7D4E;" onclick="return confirm('Close this order?');">
+            ✅ Mark as Completed
+          </button>
+        </form>
+      {% endif %}
+
+      {% if po.status not in ('Cancelled', 'Completed') %}
+        <form method="POST" action="{{ url_for('po_cancel', po_id=po.id) }}" style="display:inline;">
+          <input type="hidden" name="reason" id="cancel-reason-input" value="">
+          <button class="btn" type="button" onclick="cancelPO()" style="background:#9B3D2E;color:#fff;">
+            🚫 Cancel Order
+          </button>
+        </form>
+      {% endif %}
+
+    {% endif %}
+
+    {% if current_user.role == 'site' and po.status in ('Ordered', 'Dispatched', 'Partially Delivered') %}
+      <a class="btn primary" href="{{ url_for('receive_delivery', po_id=po.id) }}">
+        📦 Confirm Delivery
+      </a>
+    {% endif %}
+
+    <a class="btn" href="{{ url_for('po_list') }}">← Back</a>
+  </div>
+</div>
+
+<!-- ===== Lines ===== -->
+<div class="card">
+  <h3>Ordered Items</h3>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Item</th>
+        <th style="text-align:right;">Ordered Qty</th>
+        <th style="text-align:right;">Shipped</th>
+        <th style="text-align:right;">Received Qty</th>
+        <th style="text-align:right;">Outstanding</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in po.lines %}
+      <tr>
+        <td>{{ line.item.code }}</td>
+        <td>{{ line.item.name }}</td>
+        <td style="text-align:right;"><strong>{{ line.ordered_qty }}</strong></td>
+        <td style="text-align:right;">{{ line.shipped_qty }}</td>
+        <td style="text-align:right;color:#3F7D4E;">{{ line.received_qty or 0 }}</td>
+        <td style="text-align:right;color:#9B3D2E;">
+          {{ line.outstanding_qty }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if po.shipments %}
+<div class="card">
+  <h3>Shipments</h3>
+  {% for s in po.shipments %}
+    <div style="border-left:3px solid #E0A82E;padding:8px 12px;margin-bottom:10px;background:#faf8f3;border-radius:6px;">
+      <strong>Shipment {{ loop.index }}</strong>
+      <span style="font-size:12px;color:#6B665B;">
+        · {{ s.dispatch_date.strftime('%d/%m/%Y') if s.dispatch_date else '' }}
+        {% if s.delivery_note_ref %}· DN {{ s.delivery_note_ref }}{% endif %}
+        {% if s.tracking_ref %}· Ref {{ s.tracking_ref }}{% endif %}
+      </span>
+      <div style="font-size:13px;margin-top:4px;">
+        {% for sl in s.lines %}{{ sl.qty }} × {{ sl.po_line.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ===== Delivery Receipts History ===== -->
+{% if po.receipts %}
+<div class="card">
+  <h3>Delivery History</h3>
+  {% for dr in po.receipts %}
+    <div style="border-left:3px solid #B8860B;padding:10px 14px;margin-bottom:12px;background:#faf8f3;border-radius:6px;">
+      <div style="font-weight:bold;">
+        Receipt {{ dr.number }}
+        <span style="font-weight:normal;font-size:12px;color:#6B665B;margin-left:8px;">
+          {{ dr.received_at|eat }} · Confirmed by {{ dr.received_by_user.name }}
+        </span>
+      </div>
+      {% if dr.delivery_note_ref %}
+        <div style="font-size:12px;color:#6B665B;">Delivery Note: {{ dr.delivery_note_ref }}</div>
+      {% endif %}
+      
+      <table class="table" style="font-size:12px;margin-top:8px;">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th style="text-align:right;">Received</th>
+            <th style="text-align:right;">Rejected/Damaged</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for drl in dr.lines %}
+            <tr>
+              <td>{{ drl.po_line.item.name }}</td>
+              <td style="text-align:right;">{{ drl.qty_received }}</td>
+              <td style="text-align:right;">{% if drl.qty_rejected > 0 %}<span style="color:#9B3D2E;">{{ drl.qty_rejected }}</span>{% else %}—{% endif %}</td>
+              <td>{{ drl.reject_reason or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function cancelPO() {
+  var reason = prompt("Reason for cancelling this order?");
+  if (!reason || !reason.trim()) {
+    alert("A reason is required to cancel.");
+    return;
+  }
+  document.getElementById("cancel-reason-input").value = reason.trim();
+  document.getElementById("cancel-reason-input").closest('form').submit();
+}
+</script>
+{% endblock %}

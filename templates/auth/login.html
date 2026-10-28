@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — PRFS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-body">
+
+<div class="login-wrap">
+  <form method="POST" class="card login-card">
+    <h1 class="login-logo">PRFS</h1>
+    <p class="login-sub">Procurement Requisition &amp; Fulfilment System</p>
+
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in msgs %}
+        <div class="flash {{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <label>Username
+      <input name="username" required autofocus autocomplete="username"
+             class="{% if errors.username %}input-error{% endif %}">
+      {% if errors.username %}
+        <small class="field-error">{{ errors.username }}</small>
+      {% endif %}
+    </label>
+
+    <label>Password
+      <input type="password" name="password" required autocomplete="current-password"
+             class="{% if errors.password %}input-error{% endif %}">
+      {% if errors.password %}
+        <small class="field-error">{{ errors.password }}</small>
+      {% endif %}
+    </label>
+
+    <button class="btn primary" type="submit">Sign in</button>
+
+        <p style="text-align:center;margin-top:14px;font-size:13px;color:#6B665B;">
+      Contact the admin to reset your password.
+    </p>
+  </form>
+</div>
+
+<style>
+  .input-error {
+    border-color: #9B3D2E !important;
+    background: #fdf6f4 !important;
+  }
+  .field-error {
+    display: block;
+    color: #9B3D2E;
+    font-size: 12px;
+    margin-top: 4px;
+    font-weight: 500;
+  }
+</style>
+
+</body>
+</html>

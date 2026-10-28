@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Categories{% endblock %}
+{% block heading %}Categories{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <h3>Add category</h3>
+  <form method="POST">
+    <div class="grid-2">
+      <label>Category name *
+        <input name="name" required placeholder="e.g. Cement">
+      </label>
+      <label>Parent (leave blank for top level)
+        <select name="parent_id">
+          <option value="">— top level —</option>
+          {% for c in roots %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <button class="btn primary" type="submit">Add category</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>All categories</h3>
+  <table class="table">
+  <thead>
+    <tr><th>Category</th><th>Level</th></tr>
+  </thead>
+  <tbody>
+    {% for c in all_cats %}
+    <tr>
+      <td>{% if c.parent_id %}&nbsp;&nbsp;&nbsp;&nbsp;↳ {% endif %}{{ c.name }}</td>
+      <td>{{ 'Sub' if c.parent_id else 'Top level' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% endblock %}

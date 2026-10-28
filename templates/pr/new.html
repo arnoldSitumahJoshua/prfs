@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit draft' if draft else 'New PR' }}{% endblock %}
+{% block heading %}{{ 'Edit draft PR' if draft else 'New Purchase Requisition' }}{% endblock %}
+
+{% block content %}
+
+{% if draft %}
+  <div class="card" style="background:#fdf4e3;border-color:#e6d5a0;">
+    <p style="margin:0;color:#6C5A20;font-size:13px;">
+      <strong>Draft:</strong> not yet submitted. Save or submit when ready.
+    </p>
+  </div>
+{% endif %}
+
+<form method="POST"
+      id="pr-form"
+      enctype="multipart/form-data"
+      action="{{ url_for('pr_submit_draft', pr_id=draft.id) if draft else url_for('pr_new') }}">
+
+  <!-- PR-12: idempotency token — generated once per page load -->
+  <input type="hidden" name="_client_token" id="client-token" value="">
+
+  <!-- ===== Header details ===== -->
+  <div class="card">
+    <h3>Request details</h3>
+    <div class="grid-2">
+      <label>Required by *
+        <input type="date" name="required_by"
+               value="{{ draft.required_by.isoformat() if draft and draft.required_by else today }}"
+               min="{{ today }}" required>
+      </label>
+      <label>Priority
+        <select name="priority">
+          <option value="Normal" {% if draft and draft.priority == 'Normal' %}selected{% endif %}>Normal</option>
+          <option value="Urgent" {% if draft and draft.priority == 'Urgent' %}selected{% endif %}>Urgent</option>
+        </select>
+      </label>
+      <label>Purpose / Work area
+        <input name="purpose" value="{{ draft.purpose if draft else '' }}"
+               placeholder="e.g. Block B, Phase 2">
+      </label>
+      <label>General notes
+        <input name="notes" value="{{ draft.notes if draft else '' }}"
+               placeholder="Any additional info for procurement">
+      </label>
+    </div>
+  </div>
+
+  <!-- ===== Quick picks ===== -->
+  {% if quick_items and not draft %}
+  <div class="card">
+    <h3>⚡ Quick picks <span class="chip">frequently requested</span></h3>
+    <p style="color:#6B665B;font-size:13px;margin-top:0;">
+      Items your site has requested recently. Click to add.
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      {% for it in quick_items %}
+        <button type="button" class="quick-pick-btn"
+                data-id="{{ it.id }}"
+                data-code="{{ it.code }}"
+                data-name="{{ it.name }}"
+                data-unit="{{ it.unit.name if it.unit else '' }}"
+                data-symbol="{{ it.unit.symbol if it.unit else '' }}"
+                data-decimal="{{ 'true' if it.unit and it.unit.allows_decimal else 'false' }}"
+                style="background:#fff;border:1px solid #D9D2C3;padding:8px 12px;
+                       border-radius:8px;cursor:pointer;font-size:13px;
+                       display:flex;align-items:center;gap:8px;">
+          {% if it.image_filename %}
+            <img src="{{ url_for('item_image', item_id=it.id) }}"
+                 style="width:28px;height:28px;object-fit:cover;border-radius:4px;">
+          {% endif %}
+          <span>
+            <strong style="display:block;color:#2B2B2B;">{{ it.name }}</strong>
+            <small style="color:#6B665B;">{{ it.code }} · {{ it.unit.name if it.unit else '—' }}</small>
+          </span>
+        </button>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ===== Search ===== -->
+  <div class="card">
+    <h3>Add items from catalogue</h3>
+    <input id="search" placeholder="Type at least 2 characters (name, code, keyword)..."
+           autocomplete="off">
+    <div style="margin-top:10px;">
+      <label style="font-size:12px;text-transform:uppercase;">Or browse by category
+        <select id="category-browse" style="width:auto;display:inline-block;margin-left:8px;">
+          <option value="">— select a category —</option>
+          {% for c in categories %}
+            <option value="{{ c.name }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div id="results" class="results" style="margin-top:10px;"></div>
+  </div>
+
+  <!-- ===== Current lines ===== -->
+  <div class="card">
+    <h3>Request list <span id="line-count" class="chip">0 items</span></h3>
+    <table class="table" id="lines-table">
+      <thead>
+        <tr>
+          <th style="width:90px;">Code</th>
+          <th>Item</th>
+          <th style="width:60px;">Unit</th>
+          <th style="width:120px;">Quantity</th>
+          <th>Remark</th>
+          <th style="width:40px;"></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body">
+        {% if draft %}
+          {% for ln in draft.lines %}
+            <tr data-id="{{ ln.item_id }}">
+              <td>{{ ln.item.code }}
+                <input type="hidden" name="item_id[]" value="{{ ln.item_id }}">
+              </td>
+              <td>{{ ln.item.name }}</td>
+              <td>{{ ln.item.unit.symbol if ln.item.unit else '' }}</td>
+              <td>
+                <input type="number" name="qty[]"
+                       step="{{ '0.001' if ln.item.unit and ln.item.unit.allows_decimal else '1' }}"
+                       min="{{ '0.001' if ln.item.unit and ln.item.unit.allows_decimal else '1' }}"
+                       value="{{ ln.requested_qty }}"
+                       required style="width:100%;">
+              </td>
+              <td><input name="remark[]" value="{{ ln.remarks or '' }}"></td>
+              <td><button type="button" class="btn small danger remove-btn">×</button></td>
+            </tr>
+          {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+    <p id="empty-msg" class="empty"
+       {% if draft and draft.lines %}style="display:none;"{% endif %}>
+      No items yet — search above to add.
+    </p>
+  </div>
+
+  <!-- ===== Attachments ===== -->
+  <div class="card">
+    <h3>Attachments <span class="chip">optional · max 5 files</span></h3>
+    <label>Choose files
+      <input type="file" name="attachments" multiple
+             accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png"
+             onchange="showSelectedFiles(this)">
+    </label>
+    <ul id="file-list" style="color:#6B665B;font-size:13px;margin:8px 0 0;padding-left:18px;"></ul>
+  </div>
+
+  <!-- ===== Submit bar ===== -->
+  <div class="submit-bar">
+    <span id="submit-count">0 items</span>
+    <div style="display:flex;gap:8px;">
+      {% if not draft %}
+        <button type="button" class="btn" id="save-draft-btn" onclick="saveAsDraft()">
+          💾 Save as draft
+        </button>
+      {% endif %}
+      <button class="btn primary" type="button" id="submit-btn" onclick="reviewAndSubmit()">
+        {{ 'Submit PR' if not draft else 'Submit this draft' }}
+      </button>
+    </div>
+  </div>
+
+  {% if draft %}
+    <input type="hidden" name="draft_id" value="{{ draft.id }}">
+  {% endif %}
+</form>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+const searchInput    = document.getElementById('search');
+const categoryBrowse = document.getElementById('category-browse');
+const resultsBox     = document.getElementById('results');
+const linesBody      = document.getElementById('lines-body');
+const emptyMsg       = document.getElementById('empty-msg');
+const lineCount      = document.getElementById('line-count');
+const submitCount    = document.getElementById('submit-count');
+const submitBtn      = document.getElementById('submit-btn');
+const tokenInput     = document.getElementById('client-token');
+
+// PR-12: one-time idempotency token per page load
+tokenInput.value = (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+
+const addedIds = new Set();
+document.querySelectorAll('#lines-body tr').forEach(tr => {
+  addedIds.add(parseInt(tr.dataset.id, 10));
+});
+
+const doSearch = debounce(async () => {
+  const q = searchInput.value.trim();
+  if (q.length < 2) { resultsBox.innerHTML = ''; return; }
+  await fetchResults({ q });
+}, 150);
+searchInput.addEventListener('input', doSearch);
+
+categoryBrowse && categoryBrowse.addEventListener('change', async () => {
+  const cat = categoryBrowse.value;
+  if (!cat) { resultsBox.innerHTML = ''; return; }
+  searchInput.value = '';
+  await fetchResults({ category: cat });
+});
+
+async function fetchResults(params) {
+  try {
+    const r = await fetch('/api/catalogue/search?' + new URLSearchParams(params));
+    const items = await r.json();
+    if (!items.length) {
+      resultsBox.innerHTML = '<div class="result"><small>No matches.</small></div>';
+      return;
+    }
+    resultsBox.innerHTML = items.map(i => {
+      const already = addedIds.has(i.id);
+      const thumb = i.image_url
+        ? `<img src="${i.image_url}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;margin-right:10px;">`
+        : '';
+      return `
+        <div class="result" data-id="${i.id}"
+             data-code="${escapeAttr(i.code)}"
+             data-name="${escapeAttr(i.name)}"
+             data-unit="${escapeAttr(i.unit)}"
+             data-decimal="${i.allows_decimal}"
+             style="display:flex;align-items:center;">
+          ${thumb}
+          <div>
+            <strong>${escapeHtml(i.name)} ${already ? '✓' : ''}</strong>
+            <small>${escapeHtml(i.code)} · ${escapeHtml(i.unit)} · ${escapeHtml(i.category)}</small>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    resultsBox.innerHTML = '<div class="result"><small>Search error.</small></div>';
+  }
+}
+
+resultsBox.addEventListener('click', e => {
+  const el = e.target.closest('.result');
+  if (!el || !el.dataset.id) return;
+  handleAdd(el);
+});
+
+document.querySelectorAll('.quick-pick-btn').forEach(btn => {
+  btn.addEventListener('click', () => handleAdd(btn));
+});
+
+function handleAdd(el) {
+  const id      = parseInt(el.dataset.id, 10);
+  if (addedIds.has(id)) {
+    const row = linesBody.querySelector(`tr[data-id="${id}"]`);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('highlight');
+      setTimeout(() => row.classList.remove('highlight'), 1200);
+      row.querySelector('input[name="qty[]"]').focus();
+    }
+    resultsBox.innerHTML = '';
+    if (searchInput) searchInput.value = '';
+    return;
+  }
+  addLine(id, el.dataset.code, el.dataset.name, el.dataset.unit, el.dataset.decimal === 'true');
+  resultsBox.innerHTML = '';
+  if (searchInput) searchInput.value = '';
+  if (searchInput) searchInput.focus();
+}
+
+function addLine(id, code, name, unit, decimal) {
+  addedIds.add(id);
+  emptyMsg.style.display = 'none';
+  const step = decimal ? '0.001' : '1';
+  const tr = document.createElement('tr');
+  tr.dataset.id = id;
+  tr.innerHTML = `
+    <td>${escapeHtml(code)}
+      <input type="hidden" name="item_id[]" value="${id}">
+    </td>
+    <td>${escapeHtml(name)}</td>
+    <td>${escapeHtml(unit)}</td>
+    <td><input type="number" name="qty[]" step="${step}" min="${step}"
+               required style="width:100%;"></td>
+    <td><input name="remark[]" placeholder="optional"></td>
+    <td><button type="button" class="btn small danger remove-btn">×</button></td>`;
+  linesBody.appendChild(tr);
+  tr.querySelector('input[name="qty[]"]').focus();
+  refreshCount();
+}
+
+linesBody.addEventListener('click', e => {
+  if (!e.target.classList.contains('remove-btn')) return;
+  const tr = e.target.closest('tr');
+  addedIds.delete(parseInt(tr.dataset.id, 10));
+  tr.remove();
+  refreshCount();
+  if (linesBody.children.length === 0) emptyMsg.style.display = 'block';
+});
+
+function refreshCount() {
+  const n = linesBody.children.length;
+  lineCount.textContent   = `${n} item${n === 1 ? '' : 's'}`;
+  submitCount.textContent = `${n} item${n === 1 ? '' : 's'}`;
+}
+refreshCount();
+
+function showSelectedFiles(input) {
+  const list = document.getElementById('file-list');
+  list.innerHTML = '';
+  Array.from(input.files).slice(0, 5).forEach(f => {
+    const li = document.createElement('li');
+    li.textContent = `${f.name} (${(f.size / 1024).toFixed(0)} KB)`;
+    list.appendChild(li);
+  });
+}
+
+/* ---- Review & submit summary (PR-10) + PR-12 guard ---- */
+function reviewAndSubmit() {
+  if (submitBtn.dataset.busy === '1') return;
+
+  if (linesBody.children.length === 0) {
+    alert('Add at least one item before submitting.');
+    return;
+  }
+  const required_by = document.querySelector('input[name="required_by"]').value;
+  if (!required_by) {
+    alert('Required-by date is mandatory.');
+    return;
+  }
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const chosen = new Date(required_by + 'T00:00:00');
+  if (chosen < today) {
+    alert('Required-by date cannot be in the past.');
+    return;
+  }
+
+  const priority = document.querySelector('select[name="priority"]').value;
+
+  const lines = [...linesBody.querySelectorAll('tr')].map(tr => {
+    const qty = tr.querySelector('input[name="qty[]"]').value;
+    const name = tr.querySelectorAll('td')[1].textContent.trim();
+    return `• ${name} × ${qty}`;
+  }).join('\n');
+
+  const summary = `Please confirm this submission:\n\n` +
+                  `Required by: ${required_by}\n` +
+                  `Priority: ${priority}\n` +
+                  `Items (${linesBody.children.length}):\n${lines}\n\n` +
+                  `Submit to procurement?`;
+
+  if (!confirm(summary)) return;
+
+  // PR-12: lock the button so a second click is impossible
+  submitBtn.dataset.busy = '1';
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting…';
+  document.getElementById('pr-form').submit();
+}
+
+/* ---- Save as draft (PR-08) ---- */
+function saveAsDraft() {
+  if (submitBtn.dataset.busy === '1') return;
+  submitBtn.dataset.busy = '1';
+  submitBtn.disabled = true;
+  const sd = document.getElementById('save-draft-btn');
+  if (sd) { sd.disabled = true; sd.textContent = 'Saving…'; }
+  const form = document.getElementById('pr-form');
+  form.action = "{{ url_for('pr_save_draft') }}";
+  form.submit();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+</script>
+
+<style>
+  tr.highlight { animation: pulse 1.2s ease-in-out; }
+  @keyframes pulse { 0%,100% { background: transparent; } 50% { background: #fff3cd; } }
+  .submit-bar {
+    position: sticky; bottom: 0;
+    background: #fff; border: 1px solid #D9D2C3;
+    border-radius: 10px; padding: 12px 18px;
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 -6px 18px rgba(0,0,0,.06); margin-bottom: 12px;
+  }
+</style>
+{% endblock %}

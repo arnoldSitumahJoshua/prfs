@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Notification Preferences{% endblock %}
+{% block heading %}Notification Preferences{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <p style="color:#6B665B;font-size:13px;margin-top:0;">
+    Choose which events should send you an email. In-app bell notifications
+    are always on. Email delivery will resume once SMTP is configured.
+  </p>
+
+  <form method="POST">
+    {% for key, label in keys %}
+      <label style="display:flex;align-items:center;gap:10px;padding:10px;
+                    border-bottom:1px solid #f0ece2;">
+        <input type="checkbox" name="{{ key }}" style="width:auto;"
+               {% if prefs.get(key, 'on') == 'on' %}checked{% endif %}>
+        <span style="font-size:14px;color:#2B2B2B;">{{ label }}</span>
+      </label>
+    {% endfor %}
+
+    <button class="btn primary" type="submit" style="margin-top:16px;">
+      Save preferences
+    </button>
+  </form>
+</div>
+
+{% endblock %}

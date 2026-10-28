@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Suppliers{% endblock %}
+{% block heading %}Suppliers{% endblock %}
+
+{% block content %}
+
+{% if current_user.role == 'officer' %}
+<div class="card">
+  <h3>Add a supplier</h3>
+  <form method="POST">
+    <div class="grid-2">
+      <label>Supplier name *
+        <input name="name" required placeholder="e.g. Nairobi Steel Ltd">
+      </label>
+      <label>Contact person
+        <input name="contact" placeholder="e.g. Jane Wanjiru">
+      </label>
+      <label>Phone
+        <input name="phone" placeholder="e.g. +254700123456">
+      </label>
+      <label>Email
+        <input type="email" name="email" placeholder="sales@supplier.co.ke">
+      </label>
+      <label style="grid-column: 1 / -1;">Tax PIN
+        <input name="tax_pin" placeholder="e.g. P051234567X">
+      </label>
+    </div>
+    <button class="btn primary" type="submit">Add supplier</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>All suppliers <span class="chip">{{ suppliers|length }}</span></h3>
+
+  {% if suppliers %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Contact</th>
+          <th>Phone</th>
+          <th>Email</th>
+          <th>Tax PIN</th>
+          {% if current_user.role == 'officer' %}<th style="width:120px;"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in suppliers %}
+        <tr>
+          <td><strong>{{ s.name }}</strong></td>
+          <td>{{ s.contact or '—' }}</td>
+          <td>{{ s.phone or '—' }}</td>
+          <td>{{ s.email or '—' }}</td>
+          <td>{{ s.tax_pin or '—' }}</td>
+          {% if current_user.role == 'officer' %}
+          <td>
+            <button class="btn small edit-supplier-btn"
+                    type="button"
+                    data-id="{{ s.id }}"
+                    data-name="{{ s.name or '' }}"
+                    data-contact="{{ s.contact or '' }}"
+                    data-phone="{{ s.phone or '' }}"
+                    data-email="{{ s.email or '' }}"
+                    data-tax_pin="{{ s.tax_pin or '' }}">
+              Edit
+            </button>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No suppliers yet.</p>
+  {% endif %}
+  {% include "_pagination.html" %}
+</div>
+
+<div id="edit-modal"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);
+            z-index:100;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:10px;padding:24px;
+              max-width:460px;width:90%;">
+    <h3 style="margin-top:0;">Edit supplier</h3>
+    <form method="POST" id="edit-form">
+      <label>Name *
+        <input name="name" id="e-name" required>
+      </label>
+      <label>Contact
+        <input name="contact" id="e-contact">
+      </label>
+      <label>Phone
+        <input name="phone" id="e-phone">
+      </label>
+      <label>Email
+        <input type="email" name="email" id="e-email">
+      </label>
+      <label>Tax PIN
+        <input name="tax_pin" id="e-tax_pin">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn primary" type="submit">Save</button>
+        <button class="btn" type="button" onclick="hideEdit()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.edit-supplier-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('e-name').value     = btn.dataset.name || '';
+    document.getElementById('e-contact').value  = btn.dataset.contact || '';
+    document.getElementById('e-phone').value    = btn.dataset.phone || '';
+    document.getElementById('e-email').value    = btn.dataset.email || '';
+    document.getElementById('e-tax_pin').value  = btn.dataset.tax_pin || '';
+    document.getElementById('edit-form').action = '/suppliers/' + btn.dataset.id + '/edit';
+    document.getElementById('edit-modal').style.display = 'flex';
+  });
+});
+function hideEdit() {
+  document.getElementById('edit-modal').style.display = 'none';
+}
+document.getElementById('edit-modal').addEventListener('click', e => {
+  if (e.target.id === 'edit-modal') hideEdit();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') hideEdit();
+});
+</script>
+{% endblock %}

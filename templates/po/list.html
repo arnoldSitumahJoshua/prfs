@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Purchase Orders{% endblock %}
+{% block heading %}Purchase Orders{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;">
+    <div>
+      <a class="btn {% if not f_status %}primary{% endif %}" href="{{ url_for('po_list') }}">All</a>
+      <a class="btn {% if f_status == 'Ordered' %}primary{% endif %}" href="{{ url_for('po_list', status='Ordered') }}">Ordered</a>
+      <a class="btn {% if f_status == 'Dispatched' %}primary{% endif %}" href="{{ url_for('po_list', status='Dispatched') }}">Dispatched</a>
+      <a class="btn {% if f_status == 'Partially Delivered' %}primary{% endif %}" href="{{ url_for('po_list', status='Partially Delivered') }}">Partially Delivered</a>
+      <a class="btn {% if f_status == 'Completed' %}primary{% endif %}" href="{{ url_for('po_list', status='Completed') }}">Completed</a>
+    </div>
+    {% if current_user.role == 'officer' %}
+      <a class="btn primary" href="{{ url_for('po_new') }}" style="background:#B8860B;">+ New Order</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  {% if pos %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>PO #</th>
+          <th>Site</th>
+          <th>Supplier</th>
+          <th>Expected</th>
+          <th>Lines</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for po in pos %}
+        <tr>
+          <td><strong>{{ po.number }}</strong></td>
+          <td>{{ po.site.code }}</td>
+          <td>{{ po.supplier.name if po.supplier else '—' }}</td>
+          <td>{{ po.expected_date.strftime('%d/%m/%Y') if po.expected_date else '—' }}</td>
+          <td>{{ po.lines|length }}</td>
+          <td>
+            <span class="chip" style="background:
+              {% if po.status == 'Delivered' %}#e8f3ec;color:#3F7D4E;
+              {% elif po.status == 'Partially Delivered' %}#fdf4e3;color:#9C7209;
+              {% else %}#f3efe6;color:#6B665B;{% endif %}">
+              {{ po.status }}
+            </span>
+          </td>
+          <td>
+            <a href="{{ url_for('po_detail', po_id=po.id) }}">View</a>
+            {% if current_user.role == 'site' and po.status in ('Ordered', 'Dispatched', 'Partially Delivered') %}
+              · <a href="{{ url_for('receive_delivery', po_id=po.id) }}" style="color:#3F7D4E;font-weight:bold;">Receive</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No orders found.</p>
+  {% endif %}
+  {% include "_pagination.html" %}
+</div>
+{% endblock %}

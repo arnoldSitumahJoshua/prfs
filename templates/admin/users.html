@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block heading %}Users &amp; Accounts{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <h3>Create a new user</h3>
+  <form method="POST">
+    <div class="grid-2">
+      <label>Full name *
+        <input name="name" required placeholder="e.g. Jane Wanjiru">
+      </label>
+      <label>Username *
+        <input name="username" required placeholder="e.g. jwanjiru" autocapitalize="off">
+      </label>
+      <label>Email
+        <input type="email" name="email" placeholder="e.g. jane@company.co.ke">
+      </label>
+      <label>Phone
+        <input name="phone" placeholder="e.g. +254700123456">
+      </label>
+      <label>Role *
+        <select name="role" required onchange="toggleSiteField(this)">
+          <option value="">— select —</option>
+          <option value="site">Site Manager</option>
+          <option value="officer">Procurement Officer</option>
+          <option value="viewer">Management Viewer</option>
+        </select>
+      </label>
+      <label>Site (only for Site Managers)
+        <select name="site_id" id="site-field" disabled>
+          <option value="">— none —</option>
+          {% for s in sites %}
+            <option value="{{ s.id }}">{{ s.name }} ({{ s.code }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="grid-column: 1 / -1;">Password *
+        <input type="password" name="password" required minlength="10"
+               placeholder="Minimum 10 characters">
+      </label>
+    </div>
+    <button class="btn primary" type="submit">Create user</button>
+  </form>
+</div>
+
+<!-- ===== Filter bar ===== -->
+
+
+<div class="card">
+  <h3>All users <span class="chip">{{ pager.total if pager else users|length }}</span></h3>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Site</th>
+        <th>Last login</th>
+        <th>Status</th>
+        <th style="width:220px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr {% if not u.active %}style="opacity:.55;"{% endif %}>
+        <td>{{ u.name }}</td>
+        <td><strong>{{ u.username }}</strong></td>
+        <td>{{ u.email or '—' }}</td>
+        <td>
+          {% if u.role == 'officer' %}
+            <span class="chip" style="background:#f3efe6;color:#9C7209;border-color:#d9c98a;">Procurement Officer</span>
+          {% elif u.role == 'viewer' %}
+            <span class="chip">Viewer</span>
+          {% else %}
+            <span class="chip">Site Manager</span>
+          {% endif %}
+        </td>
+        <td>{{ u.site.code if u.site else '—' }}</td>
+        <td>
+          {% if u.last_login %}
+            {{ u.last_login|eat }}
+          {% else %}
+            <span style="color:#6B665B;">never</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.locked_until and u.locked_until > now %}
+            <span class="chip" style="background:#f8e6e3;color:#9B3D2E;border-color:#f0c8c1;">Locked</span>
+          {% elif u.active %}
+            <span class="chip" style="background:#e8f3ec;color:#3F7D4E;border-color:#c5e0ce;">Active</span>
+          {% else %}
+            <span class="chip">Inactive</span>
+          {% endif %}
+        </td>
+        <td style="font-size:12px;">
+
+          {% if u.locked_until and u.locked_until > now %}
+            <form method="POST" action="{{ url_for('admin_user_unlock', user_id=u.id) }}"
+                  style="display:inline;">
+              <button class="btn small" type="submit">Unlock</button>
+            </form>
+          {% endif %}
+
+          <button class="btn small" type="button"
+                  onclick="showReset({{ u.id }}, '{{ u.username }}')">Reset</button>
+
+          {% if u.id != current_user.id %}
+            <form method="POST" action="{{ url_for('admin_user_toggle', user_id=u.id) }}"
+                  style="display:inline;"
+                  onsubmit="return confirm('{% if u.active %}Deactivate{% else %}Activate{% endif %} this user?');">
+              <button class="btn small" type="submit">
+                {% if u.active %}Deactivate{% else %}Activate{% endif %}
+              </button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% include "_pagination.html" %}
+</div>
+
+<div id="reset-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:10px;padding:24px;max-width:400px;width:90%;">
+    <h3 style="margin-top:0;">Reset password</h3>
+    <p style="color:#6B665B;font-size:13px;">
+      Set a new password for <strong id="reset-user"></strong>.
+      They will be forced to change it on next sign-in.
+    </p>
+    <form method="POST" id="reset-form">
+      <label>New password (min 10 characters)
+        <input type="password" name="new_password" required minlength="10">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn primary" type="submit">Reset</button>
+        <button class="btn" type="button" onclick="hideReset()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+function toggleSiteField(select) {
+  const siteField = document.getElementById('site-field');
+  if (select.value === 'site') {
+    siteField.disabled = false;
+    siteField.required = true;
+  } else {
+    siteField.disabled = true;
+    siteField.required = false;
+    siteField.value = '';
+  }
+}
+
+function showReset(id, username) {
+  document.getElementById('reset-user').textContent = username;
+  document.getElementById('reset-form').action = '/admin/users/' + id + '/reset-password';
+  document.getElementById('reset-modal').style.display = 'flex';
+}
+function hideReset() {
+  document.getElementById('reset-modal').style.display = 'none';
+}
+document.getElementById('reset-modal').addEventListener('click', e => {
+  if (e.target.id === 'reset-modal') hideReset();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') hideReset();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}New Purchase Order{% endblock %}
+{% block heading %}New Purchase Order{% endblock %}
+
+{% block content %}
+<form method="POST" id="po-form">
+  <div class="card">
+    <h3>Order Details</h3>
+    <div class="grid-2">
+      <label>Destination Site *
+        <select name="site_id" required>
+          <option value="">— select site —</option>
+          {% for s in sites %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Supplier *
+        <select name="supplier_id" required>
+          <option value="">— select supplier —</option>
+          {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>PO Date *<input type="date" name="po_date" value="{{ today }}" required></label>
+      <label>Expected Delivery<input type="date" name="expected_date"></label>
+      <label style="grid-column: 1 / -1;">Remarks<input name="remarks" placeholder="Optional notes"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Items</h3>
+    <input id="search" placeholder="Search catalogue to add items..." autocomplete="off" style="margin-bottom:12px;">
+    <div id="results" class="results"></div>
+
+    <table class="table" style="margin-top:16px;">
+      <thead>
+        <tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th><th></th></tr>
+      </thead>
+      <tbody id="lines-body">
+        <!-- JS adds rows here -->
+      </tbody>
+    </table>
+  </div>
+
+  <div class="submit-bar">
+    <span id="total-display" style="font-size:18px;font-weight:bold;">Total: KES 0.00</span>
+    <div>
+      <button type="submit" name="action" value="draft" class="btn">Save Draft</button>
+      <button type="submit" name="action" value="submit" class="btn primary" onclick="return confirm('Submit this order? It will be sent to the site.');">Submit Order</button>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let items = [];
+
+document.getElementById('search').addEventListener('input', debounce(async e => {
+  const q = e.target.value.trim();
+  const res = document.getElementById('results');
+  if (q.length < 2) { res.innerHTML = ''; return; }
+
+  const r = await fetch('/api/catalogue/search?q=' + encodeURIComponent(q));
+  const data = await r.json();
+  
+  res.innerHTML = data.map(i => `
+    <div class="result" onclick="addLine(${i.id}, '${i.name}', '${i.code}', ${i.price})">
+      <strong>${i.name}</strong> — ${i.code} <span style="float:right;">KES ${i.price}</span>
+    </div>
+  `).join('');
+}, 200));
+
+function addLine(id, name, code, price) {
+  if (document.querySelector(`input[name="item_id[]"][value="${id}"]`)) {
+    alert('Item already added'); return;
+  }
+  
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${name} <br><small>${code}</small><input type="hidden" name="item_id[]" value="${id}"></td>
+    <td><input type="number" name="qty[]" step="1" min="1" value="1" required oninput="calc()" style="width:80px;"></td>
+    <td><input type="number" name="price[]" step="0.01" min="0" value="${price}" required oninput="calc()" style="width:100px;"></td>
+    <td class="line-total">0.00</td>
+    <td><button type="button" class="btn small danger" onclick="this.closest('tr').remove();calc();">×</button></td>
+  `;
+  document.getElementById('lines-body').appendChild(tr);
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('search').value = '';
+  calc();
+}
+
+function calc() {
+  let total = 0;
+  document.querySelectorAll('#lines-body tr').forEach(tr => {
+    const qty = parseFloat(tr.querySelector('input[name="qty[]"]').value) || 0;
+    const price = parseFloat(tr.querySelector('input[name="price[]"]').value) || 0;
+    const lineTotal = qty * price;
+    tr.querySelector('.line-total').textContent = lineTotal.toFixed(2);
+    total += lineTotal;
+  });
+  document.getElementById('total-display').textContent = 'Total: KES ' + total.toFixed(2);
+}
+</script>
+{% endblock %}

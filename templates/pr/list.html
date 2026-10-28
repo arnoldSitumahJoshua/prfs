@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}PRs{% endblock %}
+{% block heading %}
+  {% if current_user.role == 'site' %}My Purchase Requisitions{% else %}PR Queue{% endif %}
+{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a class="btn" href="{{ url_for('export_prs', fmt='xlsx', status=filters.status or '') }}">📊 Excel</a>
+    <a class="btn" href="{{ url_for('export_prs', fmt='csv', status=filters.status or '') }}">📄 CSV</a>
+    <a class="btn" href="{{ url_for('export_prs', fmt='pdf', status=filters.status or '') }}">📕 PDF</a>
+    {% if current_user.role == 'officer' %}
+      <a class="btn {% if show_archived %}primary{% endif %}"
+         href="{{ url_for('pr_list', archived='0' if show_archived else '1') }}">
+        {% if show_archived %}📂 Hide archived{% else %}🗂 Show archived{% endif %}
+      </a>
+    {% endif %}
+    {% if current_user.role == 'site' %}
+      <a class="btn primary" href="{{ url_for('pr_new') }}">+ New PR</a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ===== Filter bar (TRK-01 + PRC-03) ===== -->
+<div class="card">
+  <form method="GET" class="grid-2" style="align-items:end;">
+    <label>Search
+      <input name="q" value="{{ filters.q }}"
+             placeholder="PR #, PO #, item, requester, purpose or notes">
+    </label>
+    <label>Status
+      <select name="status">
+        <option value="">— any status —</option>
+        {% for s in ["Draft","Submitted","In Progress","Partially Received","Received (Fulfilled)","Cancelled","Returned for Amendment"] %}
+          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Priority
+      <select name="priority">
+        <option value="">— any —</option>
+        <option value="Normal" {% if filters.priority == 'Normal' %}selected{% endif %}>Normal</option>
+        <option value="Urgent" {% if filters.priority == 'Urgent' %}selected{% endif %}>Urgent</option>
+      </select>
+    </label>
+    {% if current_user.role in ('officer', 'viewer') %}
+    <label>Requester
+      <select name="requester_id">
+        <option value="">— anyone —</option>
+        {% for u in requesters %}
+          <option value="{{ u.id }}"
+                  {% if filters.requester_id == u.id %}selected{% endif %}>
+            {{ u.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Submitted from
+      <input type="date" name="date_from" value="{{ filters.date_from }}">
+    </label>
+    <label>Submitted to
+      <input type="date" name="date_to" value="{{ filters.date_to }}">
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:24px;">
+      <input type="checkbox" name="overdue" value="1"
+             {% if filters.overdue %}checked{% endif %} style="width:auto;">
+      Overdue only
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:24px;">
+      <input type="checkbox" name="outstanding" value="1"
+             {% if filters.outstanding %}checked{% endif %} style="width:auto;">
+      Has outstanding lines
+    </label>
+    <div style="grid-column: 1 / -1;">
+      <button class="btn primary" type="submit">Apply filters</button>
+      <a class="btn" href="{{ url_for('pr_list') }}">Clear</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <p style="margin-top:0;color:#6B665B;font-size:13px;">
+    {{ pager.total if pager else prs|length }}
+    PR{{ 's' if (pager.total if pager else prs|length) != 1 else '' }} shown.
+  </p>
+
+  {% if prs %}
+    <table class="table" data-newest-pr-id="{{ prs[0].id if prs else 0 }}">
+      <thead>
+        <tr>
+          <th>PR #</th>
+          <th>Site</th>
+          <th>Requester</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Required by</th>
+          <th>Lines</th>
+          <th>Outstanding</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pr in prs %}
+        <tr {% if pr.archived %}style="opacity:.55;"{% endif %}
+            {% if current_user.role in ('officer','viewer') and pr.seen_by is none and pr.status == 'Submitted' %}
+              style="background:#fdf4e3;"
+            {% endif %}>
+          <td>
+            <strong>{{ pr.number or '— draft —' }}</strong>
+            {% if pr.archived %}
+              <span class="chip" style="background:#f3efe6;color:#6B665B;font-size:10px;">archived</span>
+            {% endif %}
+            {% if current_user.role in ('officer','viewer')
+                  and pr.seen_by is none and pr.status == 'Submitted' %}
+              <span class="chip"
+                    style="background:#fdf4e3;color:#9C7209;
+                           font-size:10px;border-color:#e6d5a0;">NEW</span>
+            {% endif %}
+          </td>
+          <td>{{ pr.site.code }}</td>
+          <td>{{ pr.requester.name }}</td>
+          <td><span class="chip">{{ pr.status }}</span></td>
+          <td>
+            {% if pr.priority == 'Urgent' %}
+              <span class="chip" style="background:#f8e6e3;color:#9B3D2E;border-color:#f0c8c1;">Urgent</span>
+            {% else %}Normal{% endif %}
+          </td>
+          <td>{{ pr.required_by }}</td>
+          <td>{{ pr.lines|length }}</td>
+          <td>
+            {% set oc = outstanding_counts.get(pr.id, 0) if outstanding_counts else 0 %}
+            {% if oc > 0 %}
+              <strong style="color:#9B3D2E;">{{ oc }}</strong>
+            {% else %}
+              <span style="color:#6B665B;">—</span>
+            {% endif %}
+          </td>
+          <td><a href="{{ url_for('pr_detail', pr_id=pr.id) }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No PRs match the filter.</p>
+  {% endif %}
+
+  {% include "_pagination.html" %}
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+{% if current_user.role in ('officer', 'viewer') %}
+<script>
+const table = document.querySelector('table[data-newest-pr-id]');
+let lastNewestId = table ? parseInt(table.dataset.newestPrId, 10) : 0;
+
+async function pollQueue() {
+  try {
+    const r = await fetch('/api/pr/queue-count');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.newest_id > lastNewestId) {
+      window.location.reload();
+    }
+  } catch (e) { /* silent */ }
+}
+
+setInterval(pollQueue, 15000);
+</script>
+{% endif %}
+{% endblock %}

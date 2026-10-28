@@ -1,0 +1,725 @@
+{% extends "base.html" %}
+{% block title %}{{ pr.number or 'Draft' }}{% endblock %}
+{% block heading %}PR {{ pr.number or '(draft)' }}{% endblock %}
+
+{% block content %}
+
+{# ---------- helpers / flags ---------- #}
+{% set status_cls = {
+  'Draft':'st-neutral','Submitted':'st-neutral',
+  'Processing':'st-gold','Ordered':'st-gold','Dispatched':'st-gold','In Progress':'st-gold',
+  'Partially Received':'st-amber',
+  'Received':'st-green','Received (Fulfilled)':'st-green',
+  'Declined':'st-red','Cancelled':'st-red','Closed (Short)':'st-red',
+  'Returned for Amendment':'st-red'
+} %}
+{% set is_officer = current_user.role == 'officer' %}
+{% set is_site = current_user.role == 'site' and pr.site_id == current_user.site_id %}
+{% set can_act = is_officer and pr.status not in ('Received (Fulfilled)','Cancelled','Returned for Amendment') %}
+
+{% set ns = namespace(total=0, ordered=0, received=0, outstanding=0) %}
+{% for l in pr.lines %}
+  {% set ns.total = ns.total + 1 %}
+  {% if (l.ordered_qty or 0) > 0 %}{% set ns.ordered = ns.ordered + 1 %}{% endif %}
+  {% if l.status in ('Received', 'Closed (Short)') %}{% set ns.received = ns.received + 1 %}{% endif %}
+  {% if l.outstanding_qty > 0 %}{% set ns.outstanding = ns.outstanding + 1 %}{% endif %}
+{% endfor %}
+{% set pct = ((ns.received / ns.total) * 100)|round|int if ns.total else 0 %}
+
+<!-- ===== Needs-attention banners ===== -->
+{% if current_user.role == 'site' and pr.status == 'Returned for Amendment' %}
+  <div class="banner banner-red">
+    <div>
+      <strong>⚠ Returned for amendment</strong>
+      <p>Procurement sent this PR back. Check the reason in the timeline, then amend and resubmit.</p>
+    </div>
+    <a class="btn primary" href="{{ url_for('pr_amend', pr_id=pr.id) }}">✏️ Amend PR</a>
+  </div>
+{% endif %}
+
+{% if current_user.role == 'site' %}
+  {% set deliverable = pr.lines | selectattr('status', 'in', ['Dispatched', 'Partially Received']) | list %}
+  {% if deliverable %}
+    <div class="banner banner-gold">
+      <div>
+        <strong>📦 Delivery ready to confirm</strong>
+        <p>{{ deliverable|length }} item{{ 's' if deliverable|length != 1 else '' }} waiting to be received.</p>
+      </div>
+      <a class="btn primary" href="{{ url_for('confirm_delivery', pr_id=pr.id) }}">Confirm Delivery</a>
+    </div>
+  {% endif %}
+{% endif %}
+
+<!-- ===== Header ===== -->
+<div class="card pr-head">
+  <div class="pr-head-top">
+    <div class="pr-head-chips">
+      <span class="chip pr-status-chip {{ status_cls[pr.status] if pr.status in status_cls else 'st-neutral' }}">{{ pr.status }}</span>
+      {% if pr.priority == 'Urgent' %}
+        <span class="chip st-red">🔥 Urgent</span>
+      {% else %}
+        <span class="chip st-neutral">Normal priority</span>
+      {% endif %}
+      {% if pr.archived %}<span class="chip st-neutral">🗂 Archived</span>{% endif %}
+    </div>
+    <div class="pr-head-actions">
+      <a class="btn small" href="{{ url_for('pr_pdf', pr_id=pr.id) }}" target="_blank">📄 View PDF</a>
+      <a class="btn small" href="{{ url_for('pr_pdf', pr_id=pr.id) }}?download=1">⬇ Download</a>
+      {% if is_site %}
+        {% if pr.status == 'Draft' %}
+          <a class="btn small primary" href="{{ url_for('pr_edit_draft', pr_id=pr.id) }}">✏️ Continue editing</a>
+          <form method="POST" action="{{ url_for('pr_delete_draft', pr_id=pr.id) }}" style="display:inline;"
+                onsubmit="return confirm('Delete this draft? This cannot be undone.');">
+            <button class="btn small danger" type="submit">🗑 Delete draft</button>
+          </form>
+        {% else %}
+          <form method="POST" action="{{ url_for('pr_copy', pr_id=pr.id) }}" style="display:inline;">
+            <button class="btn small" type="submit">📋 Copy to new draft</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta"><span>Site</span><strong>{{ pr.site.name }} ({{ pr.site.code }})</strong></div>
+    <div class="meta"><span>Requester</span><strong>{{ pr.requester.name }}</strong></div>
+    <div class="meta"><span>Required by</span><strong>{{ pr.required_by or '—' }}</strong></div>
+    <div class="meta"><span>Submitted</span><strong>{{ pr.submitted_at|eat if pr.submitted_at else '— not yet —' }}</strong></div>
+  </div>
+
+  {% if pr.purpose or pr.notes %}
+    <div class="pr-notes">
+      {% if pr.purpose %}<p><span>Purpose</span> {{ pr.purpose }}</p>{% endif %}
+      {% if pr.notes %}<p><span>Notes</span> {{ pr.notes }}</p>{% endif %}
+    </div>
+  {% endif %}
+
+  {% if pr.seen_by %}
+    <p class="seen">✓ Received by procurement{% if pr.seen_at %} at {{ pr.seen_at|eat }}{% endif %}</p>
+  {% endif %}
+</div>
+
+<!-- ===== Progress summary ===== -->
+<div class="stat-row">
+  <div class="stat"><b>{{ ns.total }}</b><span>Lines</span></div>
+  <div class="stat"><b>{{ ns.ordered }}</b><span>Ordered</span></div>
+  <div class="stat"><b>{{ ns.received }}</b><span>Completed</span></div>
+  <div class="stat"><b>{{ ns.outstanding }}</b><span>Outstanding</span></div>
+  <div class="stat stat-wide">
+    <div class="bar"><i style="width:{{ pct }}%;"></i></div>
+    <span>{{ pct }}% of lines completed</span>
+  </div>
+</div>
+
+<!-- ===== Lines (+ officer status controls) ===== -->
+<div class="card">
+  <h3>Lines</h3>
+
+  {% if can_act %}
+  <form method="POST" action="{{ url_for('pr_update_status', pr_id=pr.id) }}" id="status-form">
+  {% endif %}
+
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        {% if can_act %}
+        <th style="width:36px;"><input type="checkbox" id="select-all" title="Select all"></th>
+        {% endif %}
+        <th>Code</th>
+        <th>Item</th>
+        <th>Unit</th>
+        <th style="text-align:right;">Requested</th>
+        <th style="text-align:right;">Ordered</th>
+        <th style="text-align:right;">Received</th>
+        <th style="text-align:right;">Outstanding</th>
+        <th>Expected</th>
+        <th>Status</th>
+        <th>PO</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in pr.lines %}
+      <tr data-line-id="{{ l.id }}">
+        {% if can_act %}
+        <td><input type="checkbox" name="line_ids[]" value="{{ l.id }}" class="line-check"></td>
+        {% endif %}
+        <td><span class="code">{{ l.item.code }}</span></td>
+        <td><strong>{{ l.item.name }}</strong>
+          {% if l.remarks %}<br><small class="muted">{{ l.remarks }}</small>{% endif %}
+        </td>
+        <td>{{ l.item.unit.symbol if l.item.unit }}</td>
+        <td class="num">{{ l.requested_qty }}</td>
+        <td class="num">{{ l.ordered_qty or 0 }}</td>
+        <td class="num">{{ l.received_qty or 0 }}</td>
+        <td class="num"><strong>{{ l.outstanding_qty }}</strong></td>
+        <td>
+          {% if l.expected_date %}{{ l.expected_date.strftime('%d/%m/%Y') }}
+          {% else %}<em class="muted">—</em>{% endif %}
+        </td>
+        <td><span class="chip {{ status_cls[l.status] if l.status in status_cls else 'st-neutral' }}">{{ l.status }}</span></td>
+        <td>
+          {% if l.po_lines is defined and l.po_lines %}
+            {% for pol in l.po_lines %}
+              <div class="po-ref">
+                <strong>{{ pol.po.number }}</strong> — {{ pol.ordered_qty }}
+                {% if pol.reason %}<br><em>{{ pol.reason }}</em>{% endif %}
+              </div>
+            {% endfor %}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if can_act %}
+  <div class="officer-panels">
+    <div class="panel">
+      <h4>Update status</h4>
+      <label>New status
+        <select name="status" required>
+          <option value="">— select —</option>
+          <option>Processing</option>
+          <option>Ordered</option>
+          <option>Dispatched</option>
+          <option>Declined</option>
+          <option>Closed (Short)</option>
+        </select>
+      </label>
+      <label>Remark (required for Declined / Closed Short)
+        <input name="remark" placeholder="Reason...">
+      </label>
+      <button class="btn primary" type="submit">Apply to selected lines</button>
+      <p class="hint">Nothing ticked = applies to all lines.</p>
+    </div>
+
+    <div class="panel">
+      <h4>📅 Expected delivery date</h4>
+      <label>Expected date
+        <input type="date" name="expected_date" min="{{ today }}">
+      </label>
+      <button class="btn primary" type="submit" formnovalidate
+              formaction="{{ url_for('pr_set_expected_date', pr_id=pr.id) }}">
+        Set date on selected lines
+      </button>
+      <p class="hint">Tick lines above, or leave all unticked to apply to every line.</p>
+    </div>
+  </div>
+  </form>
+  {% endif %}
+</div>
+
+<!-- ===== Officer: more actions (collapsible) ===== -->
+{% if is_officer %}
+<div class="card">
+  <h3>Procurement actions</h3>
+  <div class="act-grid">
+
+    {% if pr.status in ('Submitted', 'In Progress') %}
+      {% set has_ordered = pr.lines | selectattr('status', 'in', ['Ordered', 'Dispatched', 'Partially Received', 'Received']) | list %}
+      {% if not has_ordered %}
+      <details class="act">
+        <summary>↩ Return for amendment</summary>
+        <p class="hint">Send the PR back to the site for corrections. Number and history are preserved.</p>
+        <form method="POST" action="{{ url_for('pr_return_for_amendment', pr_id=pr.id) }}">
+          <label>Reason *
+            <input name="reason" required placeholder="e.g. Quantities unclear — please clarify">
+          </label>
+          <button class="btn primary" type="submit"
+                  onclick="return confirm('Return this PR to the site for amendment?');">Return to site</button>
+        </form>
+      </details>
+      {% endif %}
+    {% endif %}
+
+    {% if can_act %}
+    <details class="act">
+      <summary>🚫 Decline / close whole PR</summary>
+      <p class="hint">Applies to every line that isn't already finished. Reason is mandatory.</p>
+      <form method="POST" action="{{ url_for('pr_whole_action', pr_id=pr.id) }}">
+        <label>Reason *
+          <input name="reason" required placeholder="e.g. Budget frozen, all lines dropped">
+        </label>
+        <div class="btn-row">
+          <button class="btn" type="submit" name="action" value="Declined"
+                  onclick="return confirm('Decline the WHOLE PR?');">🚫 Decline PR</button>
+          <button class="btn" type="submit" name="action" value="Closed (Short)"
+                  onclick="return confirm('Close the WHOLE PR as short-supplied?');">✂ Close PR short</button>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+
+    {% if pr.status in ('Received (Fulfilled)', 'Cancelled') and not pr.archived %}
+    <details class="act">
+      <summary>🗂 Archive this PR</summary>
+      <p class="hint">Archived PRs are hidden from the queue but preserved for audit.</p>
+      <form method="POST" action="{{ url_for('pr_archive', pr_id=pr.id) }}"
+            onsubmit="return confirm('Archive this PR?');">
+        <label>Reason *
+          <input name="reason" required placeholder="e.g. Year-end cleanup">
+        </label>
+        <button class="btn" type="submit">Archive PR</button>
+      </form>
+    </details>
+    {% endif %}
+
+    <details class="act">
+      <summary>↺ Reverse a line status</summary>
+      <p class="hint">Use only when a status was set in error. Fully audited.</p>
+      <form method="POST" action="{{ url_for('pr_reverse_status', pr_id=pr.id) }}">
+        <label>Line
+          <select name="line_id" required>
+            <option value="">— select a line —</option>
+            {% for l in pr.lines %}
+              <option value="{{ l.id }}">{{ l.item.code }} — {{ l.item.name }} ({{ l.status }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>New status
+          <select name="status" required>
+            <option value="">— select new status —</option>
+            {% for s in ["Submitted","Processing","Ordered","Dispatched",
+                         "Partially Received","Received","Declined",
+                         "Cancelled","Closed (Short)"] %}
+              <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Reason *
+          <input name="reason" required placeholder="Why is this reversal happening?">
+        </label>
+        <button class="btn primary" type="submit"
+                onclick="return confirm('Reverse this line status? It will be audited.');">Reverse status</button>
+      </form>
+    </details>
+  </div>
+</div>
+{% endif %}
+
+<!-- ===== Site: cancel ===== -->
+{% if current_user.role == 'site' and pr.status == 'Submitted' %}
+<details class="card act act-danger">
+  <summary>Cancel this PR</summary>
+  <p class="hint">You can cancel while procurement hasn't started. Once they act, only they can decline or close it.</p>
+  <form method="POST" action="{{ url_for('pr_site_cancel', pr_id=pr.id) }}"
+        onsubmit="return confirm('Cancel this PR? This cannot be undone.');">
+    <label>Reason *
+      <input name="reason" required placeholder="e.g. Ordered by mistake / quantities wrong">
+    </label>
+    <button class="btn danger" type="submit">Cancel PR</button>
+  </form>
+</details>
+{% endif %}
+
+<!-- ===== Two-column area ===== -->
+<div class="pr-cols">
+
+  <!-- ---------- LEFT: deliveries + discussion ---------- -->
+  <div>
+
+    {% if pr_delivery_receipts %}
+    <div class="card">
+      <h3>Delivery history <span class="chip">{{ pr_delivery_receipts|length }} receipt{{ 's' if pr_delivery_receipts|length != 1 else '' }}</span></h3>
+
+      {% for dr in pr_delivery_receipts %}
+        <div class="dr-box">
+          <div class="dr-top">
+            <div>
+              <strong>{{ dr.number }}</strong>
+              {% if dr.excess_reason %}<span class="chip st-amber" style="font-size:10px;">⚠ excess</span>{% endif %}
+              <div class="muted small">{{ dr.received_at|eat }} · by {{ dr.received_by_user.name if dr.received_by_user else '—' }}</div>
+            </div>
+            <div class="dr-links">
+              <a class="btn small" href="{{ url_for('dr_pdf', dr_id=dr.id) }}" target="_blank" title="View DR PDF">📄 View</a>
+              <a class="btn small" href="{{ url_for('dr_pdf', dr_id=dr.id) }}?download=1" title="Download">⬇</a>
+              {% for p in dr.photos %}
+                <a class="btn small" href="{{ url_for('dr_photo', photo_id=p.id) }}" target="_blank" title="Photo {{ loop.index }}">📷 {{ loop.index }}</a>
+              {% endfor %}
+            </div>
+          </div>
+
+          {% if dr.delivery_note_ref %}
+            <div class="muted small">Delivery note ref: {{ dr.delivery_note_ref }}</div>
+          {% endif %}
+
+          {% if dr.lines %}
+          <div class="table-wrap">
+            <table class="table" style="font-size:12px;margin-top:8px;">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th style="text-align:right;">Received</th>
+                  <th style="text-align:right;">Rejected</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for drl in dr.lines %}
+                <tr>
+                  <td>{{ drl.pr_line.item.code }} — {{ drl.pr_line.item.name }}</td>
+                  <td class="num">{{ drl.qty_received }}</td>
+                  <td class="num">
+                    {% if drl.qty_rejected and drl.qty_rejected > 0 %}
+                      <span style="color:#9B3D2E;">{{ drl.qty_rejected }}</span>
+                    {% else %}—{% endif %}
+                  </td>
+                  <td>{{ drl.reject_reason or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <h3>Discussion <span class="chip">{{ comments|length }} comment{{ 's' if comments|length != 1 else '' }}</span></h3>
+
+      {% if comments %}
+        <div class="chat">
+          {% for c in comments %}
+            <div class="msg {% if c.author.role == 'officer' %}msg-officer{% endif %}">
+              <div class="msg-top">
+                <div>
+                  <strong>{{ c.author.name }}</strong>
+                  {% if c.author.role == 'officer' %}
+                    <span class="chip st-gold" style="font-size:10px;padding:2px 8px;">Procurement</span>
+                  {% elif c.author.role == 'site' %}
+                    <span class="chip" style="font-size:10px;padding:2px 8px;">Site</span>
+                  {% endif %}
+                </div>
+                <span class="muted small">{{ c.at|eat }}</span>
+              </div>
+              {% if c.pr_line %}
+                <div class="msg-re">re: {{ c.pr_line.item.code }} — {{ c.pr_line.item.name }}</div>
+              {% endif %}
+              <div class="msg-text">{{ c.text }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty" style="margin-bottom:16px;">No comments yet. Start the conversation below.</p>
+      {% endif %}
+
+      {% if current_user.role in ('site', 'officer') %}
+        <form method="POST" action="{{ url_for('pr_add_comment', pr_id=pr.id) }}" class="comment-form">
+          <label>About (optional)
+            <select name="pr_line_id">
+              <option value="">— whole PR —</option>
+              {% for l in pr.lines %}
+                <option value="{{ l.id }}">{{ l.item.code }} — {{ l.item.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Add a comment
+            <textarea name="text" rows="3" required maxlength="2000"
+                      placeholder="Type your message..."
+                      style="width:100%;resize:vertical;font-family:inherit;"></textarea>
+          </label>
+          <div class="comment-foot">
+            <span class="muted small">Comments cannot be edited or deleted after posting (CMT-03).</span>
+            <button class="btn primary" type="submit">Post comment</button>
+          </div>
+        </form>
+      {% else %}
+        <p class="empty">Viewers cannot post comments.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ---------- RIGHT: timeline + attachments ---------- -->
+  <div>
+
+    <div class="card">
+      <h3>Timeline</h3>
+      {% if history %}
+        <ul class="tl">
+          {% for h in history %}
+            <li>
+              <div class="tl-time">{{ h.at|eat }}</div>
+              <div class="tl-body">
+                {% if h.pr_line %}<em>{{ h.pr_line.item.name }}</em>{% else %}<em>PR</em>{% endif %}
+                → <strong>{{ h.to_status }}</strong>
+                {% if h.from_status and h.from_status != h.to_status %}
+                  <span class="muted">(was {{ h.from_status }})</span>
+                {% endif %}
+                {% if h.user %}<span class="muted"> by {{ h.user.name }}</span>{% endif %}
+                {% if h.remark %}<div class="tl-remark">{{ h.remark }}</div>{% endif %}
+
+                {% if h.remark and h.remark.startswith('DR-') %}
+                  {% set dr_number = h.remark.split(':')[0].strip() %}
+                  {% for receipt in pr_delivery_receipts %}
+                    {% if receipt.number == dr_number %}
+                      <div class="tl-links">
+                        <a href="{{ url_for('dr_pdf', dr_id=receipt.id) }}" target="_blank">📄 PDF</a>
+                        <a href="{{ url_for('dr_pdf', dr_id=receipt.id) }}?download=1">⬇</a>
+                        {% for p in receipt.photos %}
+                          <a href="{{ url_for('dr_photo', photo_id=p.id) }}" target="_blank"
+                             title="Open photo {{ loop.index }}">📷 {{ loop.index }}</a>
+                          <a href="{{ url_for('dr_photo', photo_id=p.id) }}?download=1"
+                             title="Download photo {{ loop.index }}">⬇</a>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                {% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">No history yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h3>Attachments <span class="chip">{{ attachments|length }} / 5</span></h3>
+
+      {% if attachments %}
+        <ul class="files">
+          {% for a in attachments %}
+            <li>
+              <div class="file-main">
+                <a href="{{ url_for('preview_pr_attachment', att_id=a.id) }}" target="_blank" title="Open in new tab">
+                  {% if a.filename.lower().endswith(('.jpg','.jpeg','.png')) %}🖼️
+                  {% elif a.filename.lower().endswith('.pdf') %}📄
+                  {% else %}📎{% endif %}
+                  {{ a.filename }}
+                </a>
+                <div class="muted small">
+                  {% if a.size %}
+                    {% if a.size > 1048576 %}{{ '%.1f'|format(a.size / 1048576) }} MB
+                    {% elif a.size > 1024 %}{{ '%.0f'|format(a.size / 1024) }} KB
+                    {% else %}{{ a.size }} B{% endif %}
+                  {% endif %}
+                  · {{ a.uploader.name if a.uploader else '—' }} · {{ a.uploaded_at|eat }}
+                </div>
+              </div>
+              <div class="file-actions">
+                <a class="btn small" href="{{ url_for('pr_attachment_download', att_id=a.id) }}" title="Download">⬇</a>
+                {% if current_user.role == 'officer'
+                      or (current_user.role == 'site' and a.uploader_id == current_user.id) %}
+                  <form method="POST" action="{{ url_for('pr_attachment_delete', att_id=a.id) }}"
+                        style="display:inline;"
+                        onsubmit="return confirm('Remove this attachment?');">
+                    <button class="btn small danger" type="submit">Delete</button>
+                  </form>
+                {% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">No attachments on this PR.</p>
+      {% endif %}
+
+      {% if current_user.role == 'site' and pr.site_id == current_user.site_id and attachments|length < 5 %}
+        <form method="POST" action="{{ url_for('pr_add_attachment', pr_id=pr.id) }}"
+              enctype="multipart/form-data" class="upload-form">
+          <label>Upload a photo, drawing or specification
+            <input type="file" name="file" required accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png">
+          </label>
+          <p class="hint">PDF, DOCX, XLSX, JPG, PNG — max 10 MB each. Maximum 5 per PR.</p>
+          <button class="btn primary" type="submit">Upload attachment</button>
+        </form>
+      {% elif current_user.role == 'site' and pr.site_id == current_user.site_id and attachments|length >= 5 %}
+        <p class="hint" style="margin-top:12px;">Maximum of 5 attachments reached. Delete one to upload another.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+const selectAll = document.getElementById('select-all');
+if (selectAll) {
+  selectAll.addEventListener('change', () => {
+    document.querySelectorAll('.line-check').forEach(cb => {
+      cb.checked = selectAll.checked;
+    });
+  });
+}
+
+const STATUS_CLS = {
+  'Draft':'st-neutral','Submitted':'st-neutral',
+  'Processing':'st-gold','Ordered':'st-gold','Dispatched':'st-gold','In Progress':'st-gold',
+  'Partially Received':'st-amber',
+  'Received':'st-green','Received (Fulfilled)':'st-green',
+  'Declined':'st-red','Cancelled':'st-red','Closed (Short)':'st-red',
+  'Returned for Amendment':'st-red'
+};
+function statusClass(s) { return STATUS_CLS[s] || 'st-neutral'; }
+
+const PR_ID = {{ pr.id }};
+let lastHistoryId = {{ history[0].id if history else 0 }};
+
+async function pollStatus() {
+  try {
+    const r = await fetch(`/api/pr/${PR_ID}/status`);
+    if (!r.ok) return;
+    const data = await r.json();
+
+    if (data.latest_history_id > lastHistoryId) {
+      window.location.reload();
+      return;
+    }
+
+    document.querySelectorAll('tr[data-line-id]').forEach(tr => {
+      const id = parseInt(tr.dataset.lineId, 10);
+      const line = data.lines.find(l => l.id === id);
+      if (!line) return;
+      const chip = tr.querySelector('.chip');
+      if (chip && chip.textContent.trim() !== line.status) {
+        chip.textContent = line.status;
+        chip.className = 'chip ' + statusClass(line.status);
+        chip.style.background = '#fff3cd';
+        setTimeout(() => chip.style.background = '', 1500);
+      }
+    });
+
+    const prChip = document.querySelector('.pr-status-chip');
+    if (prChip && prChip.textContent.trim() !== data.pr_status) {
+      prChip.textContent = data.pr_status;
+      prChip.className = 'chip pr-status-chip ' + statusClass(data.pr_status);
+      prChip.style.background = '#fff3cd';
+      setTimeout(() => prChip.style.background = '', 1500);
+    }
+  } catch (e) { /* silent */ }
+}
+
+setInterval(pollStatus, 15000);
+</script>
+
+<style>
+  .muted { color: var(--stone); }
+  .small { font-size: 12px; }
+  .hint  { color: var(--stone); font-size: 12px; margin: 6px 0 0; }
+  .num   { text-align: right; font-variant-numeric: tabular-nums; }
+  .btn.danger { background: var(--error); color: #fff; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* status chips */
+  .chip.st-neutral { background:#f3efe6; color:#4a463f; border-color:#d9d2c3; }
+  .chip.st-gold    { background:#fbf1d6; color:#8a6508; border-color:#e6d5a0; }
+  .chip.st-amber   { background:#fdf4e3; color:#9C7209; border-color:#e6c97a; }
+  .chip.st-green   { background:#e8f3ec; color:#3F7D4E; border-color:#c5e0ce; }
+  .chip.st-red     { background:#f8e6e3; color:#9B3D2E; border-color:#f0c8c1; }
+
+  /* banners */
+  .banner { display:flex; justify-content:space-between; align-items:center; gap:16px;
+            flex-wrap:wrap; padding:14px 18px; border-radius:10px; margin-bottom:16px;
+            border:1px solid; }
+  .banner p { margin:2px 0 0; font-size:13px; color:var(--stone); }
+  .banner-red  { background:#f8e6e3; border-color:#f0c8c1; }
+  .banner-red strong  { color:#9B3D2E; }
+  .banner-gold { background:#fdf4e3; border-color:#e6d5a0; }
+  .banner-gold strong { color:#8a6508; }
+
+  /* header card */
+  .pr-head { border-left: 4px solid var(--gold); }
+  .pr-head-top { display:flex; justify-content:space-between; align-items:center;
+                 gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .pr-head-chips, .pr-head-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .meta-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+  .meta span { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--stone); }
+  .meta strong { display:block; margin-top:2px; font-size:15px; }
+  .pr-notes { margin-top:14px; padding-top:12px; border-top:1px dashed var(--border); }
+  .pr-notes p { margin:4px 0; font-size:14px; }
+  .pr-notes span { display:inline-block; min-width:64px; font-size:11px; text-transform:uppercase;
+                   letter-spacing:.6px; color:var(--stone); }
+  .seen { color:var(--success); font-size:13px; margin:12px 0 0; }
+
+  /* stat row */
+  .stat-row { display:grid; grid-template-columns:repeat(4,1fr) 2fr; gap:12px; margin-bottom:16px; }
+  .stat { background:var(--card); border:1px solid var(--border); border-radius:10px;
+          padding:12px 14px; text-align:center; }
+  .stat b { display:block; font-size:24px; color:var(--gold); line-height:1.1; }
+  .stat span { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--stone); }
+  .stat-wide { display:flex; flex-direction:column; justify-content:center; gap:8px; }
+  .bar { height:10px; background:#f0ece2; border-radius:999px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--gold); border-radius:999px; }
+
+  /* tables */
+  .table-wrap { overflow-x:auto; }
+  .table .code { background:#f3efe6; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:600; }
+  .po-ref { font-size:12px; line-height:1.3; }
+  .po-ref em { color:var(--gold-dk); font-size:11px; }
+
+  /* officer panels */
+  .officer-panels { display:grid; grid-template-columns:1fr 1fr; gap:16px;
+                    margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+  .panel { background:#faf8f3; border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .panel h4 { margin:0 0 4px; color:var(--charcoal); }
+
+  /* collapsible actions */
+  .act-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; align-items:start; }
+  details.act { background:#faf8f3; border:1px solid var(--border); border-radius:10px; padding:0 16px; }
+  details.act[open] { padding-bottom:14px; }
+  details.act summary { cursor:pointer; padding:12px 0; font-weight:600; color:var(--charcoal); list-style:none; }
+  details.act summary::-webkit-details-marker { display:none; }
+  details.act summary::after { content:'＋'; float:right; color:var(--gold); }
+  details.act[open] summary::after { content:'－'; }
+  details.act-danger { background:#f8e6e3; border-color:#f0c8c1; margin-bottom:16px; }
+  details.act-danger summary { color:#9B3D2E; }
+
+  /* two column area */
+  .pr-cols { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:16px; align-items:start; }
+
+  /* delivery */
+  .dr-box { border-left:3px solid var(--gold); background:#faf8f3; border-radius:6px;
+            padding:10px 14px; margin-bottom:12px; }
+  .dr-top { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:flex-start; }
+  .dr-links { display:flex; gap:6px; flex-wrap:wrap; }
+
+  /* chat */
+  .chat { margin-bottom:20px; display:flex; flex-direction:column; gap:10px; }
+  .msg { background:#fff; border:1px solid #f0ece2; border-radius:10px; padding:10px 14px; }
+  .msg-officer { background:#faf6ec; border-color:#eadfbd; }
+  .msg-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px; gap:8px; }
+  .msg-re { font-size:11px; color:var(--gold-dk); margin-bottom:2px; }
+  .msg-text { font-size:14px; white-space:pre-wrap; }
+  .comment-form { border-top:1px solid var(--border); padding-top:12px; }
+  .comment-foot { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+
+  /* timeline */
+  .tl { list-style:none; margin:0; padding:0 0 0 18px; border-left:2px solid var(--border);
+        max-height:460px; overflow-y:auto; }
+  .tl li { position:relative; padding:0 0 14px 14px; }
+  .tl li::before { content:''; position:absolute; left:-25px; top:4px; width:10px; height:10px;
+                   border-radius:50%; background:var(--gold); border:2px solid #fff; box-shadow:0 0 0 1px var(--gold); }
+  .tl-time { font-size:11px; color:var(--stone); }
+  .tl-body { font-size:13px; }
+  .tl-remark { color:var(--gold-dk); font-size:12px; margin-top:2px; }
+  .tl-links { margin-top:4px; font-size:12px; display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* attachments */
+  .files { list-style:none; margin:0; padding:0; }
+  .files li { display:flex; justify-content:space-between; gap:10px; align-items:center;
+              padding:10px 0; border-bottom:1px solid #f0ece2; }
+  .files li:last-child { border-bottom:none; }
+  .file-main { min-width:0; word-break:break-word; font-size:14px; }
+  .file-actions { display:flex; gap:6px; flex-shrink:0; }
+  .upload-form { margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+
+  .submit-bar { position:sticky; bottom:0; }
+
+  @media (max-width: 1100px) {
+    .pr-cols { grid-template-columns:1fr; }
+    .stat-row { grid-template-columns:repeat(2,1fr); }
+    .stat-wide { grid-column:1 / -1; }
+  }
+  @media (max-width: 768px) {
+    .officer-panels { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}

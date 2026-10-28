@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ u.username }}{% endblock %}
+{% block heading %}Edit user — {{ u.username }}{% endblock %}
+
+{% block content %}
+
+<form method="POST" class="card">
+  <h3>User details</h3>
+  <div class="grid-2">
+    <label>Full name *
+      <input name="name" required value="{{ u.name }}">
+    </label>
+    <label>Username (read-only)
+      <input value="{{ u.username }}" readonly>
+    </label>
+    <label>Email
+      <input type="email" name="email" value="{{ u.email or '' }}">
+    </label>
+    <label>Phone
+      <input name="phone" value="{{ u.phone or '' }}">
+    </label>
+    <label>Role
+      <select name="role">
+        <option value="site"    {% if u.role == 'site' %}selected{% endif %}>Site Manager</option>
+        <option value="officer" {% if u.role == 'officer' %}selected{% endif %}>Procurement Officer</option>
+        <option value="viewer"  {% if u.role == 'viewer' %}selected{% endif %}>Management Viewer</option>
+      </select>
+    </label>
+    <label>Site (only for Site Managers)
+      <select name="site_id">
+        <option value="">— none —</option>
+        {% for s in sites %}
+          <option value="{{ s.id }}" {% if u.site_id == s.id %}selected{% endif %}>
+            {{ s.name }} ({{ s.code }})
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <p style="color:#6B665B;font-size:13px;margin-top:12px;">
+    Password is not editable here. Use <strong>Reset password</strong> from the Users list.
+  </p>
+
+  <button class="btn primary" type="submit">Save changes</button>
+  <a class="btn" href="{{ url_for('admin_users') }}">Cancel</a>
+</form>
+
+{% endblock %}

@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block heading %}System Settings{% endblock %}
+
+{% block content %}
+
+<div class="card" style="padding:0;">
+  <div style="display:flex;border-bottom:1px solid #D9D2C3;overflow-x:auto;">
+    {% for key, label in [
+        ('company',    '🏢 Company'),
+        ('email',      '📧 Email'),
+        ('behaviour',  '⚙️ Behaviour'),
+        ('numbering',  '🔢 Numbering'),
+        ('statuses',   '🎨 Statuses'),
+        ('retention',  '📜 Retention')
+      ] %}
+      <a href="{{ url_for('admin_settings', tab=key) }}"
+         style="flex:1;min-width:120px;text-align:center;padding:14px;
+                text-decoration:none;font-weight:600;font-size:14px;
+                color:{{ '#B8860B' if tab == key else '#6B665B' }};
+                border-bottom:3px solid {{ '#B8860B' if tab == key else 'transparent' }};">
+        {{ label }}
+      </a>
+    {% endfor %}
+  </div>
+</div>
+
+{# ============================================================
+   COMPANY TAB
+   ============================================================ #}
+{% if tab == 'company' %}
+<form method="POST" class="card">
+  <input type="hidden" name="section" value="company">
+  <h3>Company identity</h3>
+  <p style="color:#6B665B;font-size:13px;">
+    These values appear on generated PDFs and page headers.
+  </p>
+  <div class="grid-2">
+    <label>Company name
+      <input name="company_name"
+             value="{{ settings.get('company_name', 'Canaan Developers') }}">
+    </label>
+    <label>Logo text (short)
+      <input name="company_logo_text"
+             value="{{ settings.get('company_logo_text', 'PRFS') }}"
+             maxlength="12">
+    </label>
+  </div>
+  <button class="btn primary" type="submit">Save company settings</button>
+</form>
+{% endif %}
+
+{# ============================================================
+   EMAIL TAB
+   ============================================================ #}
+{% if tab == 'email' %}
+<form method="POST" class="card">
+  <input type="hidden" name="section" value="email">
+  <h3>Email notifications</h3>
+
+  <p style="color:#6B665B;font-size:13px;">
+    Choose how the system sends PR notifications to the procurement officer.
+  </p>
+
+  {% set mode = settings.get('email_mode', 'manual') %}
+  <label style="display:flex;align-items:start;gap:12px;margin:12px 0;">
+    <input type="radio" name="email_mode" value="auto"
+           {% if mode == 'auto' %}checked{% endif %}
+           style="width:auto;margin-top:6px;">
+    <span>
+      <strong>Automatic</strong><br>
+      <span style="color:#6B665B;font-size:13px;">
+        The server sends emails via SMTP / Microsoft 365.
+      </span>
+    </span>
+  </label>
+  <label style="display:flex;align-items:start;gap:12px;margin:12px 0;">
+    <input type="radio" name="email_mode" value="manual"
+           {% if mode == 'manual' %}checked{% endif %}
+           style="width:auto;margin-top:6px;">
+    <span>
+      <strong>Manual</strong><br>
+      <span style="color:#6B665B;font-size:13px;">
+        Writes a .eml file the officer opens in classic Outlook.
+      </span>
+    </span>
+  </label>
+
+  <div class="grid-2" style="margin-top:16px;">
+    <label>To address(es)
+      <input name="email_to" value="{{ settings.get('email_to', '') }}"
+             placeholder="procurement@company.co.ke">
+    </label>
+    <label>CC address(es)
+      <input name="email_cc" value="{{ settings.get('email_cc', '') }}"
+             placeholder="head.business@company.co.ke">
+    </label>
+  </div>
+
+  <details style="margin-top:16px;padding:12px;background:#faf6ec;border-radius:8px;">
+    <summary style="cursor:pointer;font-weight:600;color:#9C7209;">
+      SMTP server details (only needed for Automatic mode)
+    </summary>
+    <div class="grid-2" style="margin-top:12px;">
+      <label>SMTP server
+        <input name="email_smtp_server"
+               value="{{ settings.get('email_smtp_server', '') }}"
+               placeholder="smtp.office365.com">
+      </label>
+      <label>SMTP port
+        <input name="email_smtp_port"
+               value="{{ settings.get('email_smtp_port', '587') }}"
+               placeholder="587">
+      </label>
+      <label>SMTP username
+        <input name="email_smtp_user"
+               value="{{ settings.get('email_smtp_user', '') }}"
+               placeholder="prfs@company.co.ke">
+      </label>
+      <label>SMTP password
+        <input type="password" name="email_smtp_password"
+               value="{{ settings.get('email_smtp_password', '') }}"
+               placeholder="Leave blank to keep existing">
+      </label>
+    </div>
+  </details>
+
+  <button class="btn primary" type="submit" style="margin-top:16px;">
+    Save email settings
+  </button>
+</form>
+{% endif %}
+
+{# ============================================================
+   BEHAVIOUR TAB
+   ============================================================ #}
+{% if tab == 'behaviour' %}
+<form method="POST" class="card">
+  <input type="hidden" name="section" value="behaviour">
+  <h3>System behaviour</h3>
+  <div class="grid-2">
+    <label>Session timeout (minutes)
+      <input type="number" name="session_timeout_minutes" min="5" max="480"
+             value="{{ settings.get('session_timeout_minutes', '30') }}">
+    </label>
+    <label>Reminder threshold (hours)
+      <input type="number" name="reminder_hours" min="1" max="168"
+             value="{{ settings.get('reminder_hours', '24') }}">
+    </label>
+    <label>Max file size (MB)
+      <input type="number" name="max_file_size_mb" min="1" max="100"
+             value="{{ settings.get('max_file_size_mb', '10') }}">
+    </label>
+    <label>Max files per PO
+      <input type="number" name="max_files_per_po" min="1" max="50"
+             value="{{ settings.get('max_files_per_po', '10') }}">
+    </label>
+    <label>Max files per PR
+      <input type="number" name="max_files_per_pr" min="1" max="50"
+             value="{{ settings.get('max_files_per_pr', '5') }}">
+    </label>
+  </div>
+
+  <label style="display:flex;align-items:center;gap:8px;margin-top:16px;
+                padding:12px;background:#faf6ec;border-radius:8px;">
+    <input type="checkbox" name="allow_excess_receipt" style="width:auto;"
+           {% if settings.get('allow_excess_receipt', 'off') == 'on' %}checked{% endif %}>
+    <span>
+      <strong>Allow excess receipt</strong><br>
+      <span style="color:#6B665B;font-size:12px;">
+        If enabled, a site can confirm MORE than the ordered quantity.
+        A mandatory reason is required and the officer is flagged.
+      </span>
+    </span>
+  </label>
+
+  <p style="color:#6B665B;font-size:13px;margin-top:12px;">
+    Note: some values apply only after the app is restarted.
+  </p>
+  <button class="btn primary" type="submit">Save behaviour settings</button>
+</form>
+{% endif %}
+
+{# ============================================================
+   NUMBERING TAB
+   ============================================================ #}
+{% if tab == 'numbering' %}
+<form method="POST" class="card">
+  <input type="hidden" name="section" value="numbering">
+  <h3>Numbering prefixes</h3>
+  <p style="color:#6B665B;font-size:13px;">
+    PR numbers use a fixed format (PR-{SITE}-{YEAR}-{NNNNN}).
+    PO and DR prefixes can be configured below.
+  </p>
+  <div class="grid-2">
+    <label>PO number prefix
+      <input name="po_number_prefix"
+             value="{{ settings.get('po_number_prefix', 'PO') }}"
+             maxlength="10">
+    </label>
+    <label>DR number prefix
+      <input name="dr_number_prefix"
+             value="{{ settings.get('dr_number_prefix', 'DR') }}"
+             maxlength="10">
+    </label>
+  </div>
+  <button class="btn primary" type="submit">Save numbering</button>
+</form>
+{% endif %}
+
+{# ============================================================
+   STATUSES TAB (ADM-05)
+   ============================================================ #}
+{% if tab == 'statuses' %}
+<form method="POST" class="card">
+  <input type="hidden" name="section" value="statuses">
+  <h3>Status colours</h3>
+  <p style="color:#6B665B;font-size:13px;">
+    Choose the colour for each of the three officer-controlled statuses.
+    These colours are used on status chips across the app.
+  </p>
+
+  <div class="grid-2">
+    <label>Processing
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="color"
+               name="status_colour_processing"
+               value="{{ settings.get('status_colour_processing', '#E0A82E') }}"
+               style="width:60px;height:40px;padding:2px;cursor:pointer;">
+        <span style="font-size:13px;color:#6B665B;">
+          {{ settings.get('status_colour_processing', '#E0A82E') }}
+        </span>
+      </div>
+    </label>
+
+    <label>Ordered
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="color"
+               name="status_colour_ordered"
+               value="{{ settings.get('status_colour_ordered', '#7B4B7A') }}"
+               style="width:60px;height:40px;padding:2px;cursor:pointer;">
+        <span style="font-size:13px;color:#6B665B;">
+          {{ settings.get('status_colour_ordered', '#7B4B7A') }}
+        </span>
+      </div>
+    </label>
+
+    <label>Dispatched
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="color"
+               name="status_colour_dispatched"
+               value="{{ settings.get('status_colour_dispatched', '#C2602F') }}"
+               style="width:60px;height:40px;padding:2px;cursor:pointer;">
+        <span style="font-size:13px;color:#6B665B;">
+          {{ settings.get('status_colour_dispatched', '#C2602F') }}
+        </span>
+      </div>
+    </label>
+  </div>
+
+  <div style="margin-top:16px;padding:12px;background:#faf6ec;border-radius:8px;">
+    <strong style="color:#6B665B;font-size:13px;">Preview</strong>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+      {% set proc = settings.get('status_colour_processing', '#E0A82E') %}
+      {% set ord  = settings.get('status_colour_ordered', '#7B4B7A') %}
+      {% set disp = settings.get('status_colour_dispatched', '#C2602F') %}
+      <span class="chip" style="background:{{ proc }}1A;color:{{ proc }};border-color:{{ proc }}66;">Processing</span>
+      <span class="chip" style="background:{{ ord }}1A;color:{{ ord }};border-color:{{ ord }}66;">Ordered</span>
+      <span class="chip" style="background:{{ disp }}1A;color:{{ disp }};border-color:{{ disp }}66;">Dispatched</span>
+    </div>
+  </div>
+
+  <button class="btn primary" type="submit" style="margin-top:16px;">Save status colours</button>
+</form>
+{% endif %}
+
+{# ============================================================
+   RETENTION TAB (AUD-04)
+   ============================================================ #}
+{% if tab == 'retention' %}
+<form method="POST" class="card">
+  <input type="hidden" name="section" value="retention">
+  <h3>Audit log retention</h3>
+  <p style="color:#6B665B;font-size:13px;">
+    How long audit entries are retained before archiving. Specification
+    requires <strong>at least 7 years</strong>. This setting is documented
+    for the retention job; the job itself runs outside the app.
+  </p>
+  <div class="grid-2">
+    <label>Retention (years)
+      <input type="number" name="audit_retention_years"
+             min="1" max="50"
+             value="{{ settings.get('audit_retention_years', '7') }}">
+    </label>
+  </div>
+  <button class="btn primary" type="submit" style="margin-top:12px;">
+    Save retention setting
+  </button>
+</form>
+{% endif %}
+
+{% endblock %}

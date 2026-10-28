@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Amend {{ pr.number }}{% endblock %}
+{% block heading %}Amend PR {{ pr.number }}{% endblock %}
+
+{% block content %}
+
+{% if return_reason %}
+<div class="card" style="background:#f8e6e3;border-color:#f0c8c1;">
+  <h3 style="margin-top:0;color:#9B3D2E;">⚠ Returned for amendment</h3>
+  <p style="margin:0;font-size:14px;">{{ return_reason }}</p>
+</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('pr_resubmit', pr_id=pr.id) }}"
+      id="pr-form" enctype="multipart/form-data">
+  <input type="hidden" name="_client_token"
+         value="{{ range(1000000, 9999999) | random }}">
+
+  <!-- ===== Header details ===== -->
+  <div class="card">
+    <h3>Request details</h3>
+    <div class="grid-2">
+      <label>Required by *
+        <input type="date" name="required_by"
+               value="{{ pr.required_by.isoformat() if pr.required_by else today }}"
+               min="{{ today }}" required>
+      </label>
+      <label>Priority
+        <select name="priority">
+          <option value="Normal" {% if pr.priority == 'Normal' %}selected{% endif %}>Normal</option>
+          <option value="Urgent" {% if pr.priority == 'Urgent' %}selected{% endif %}>Urgent</option>
+        </select>
+      </label>
+      <label>Purpose / Work area
+        <input name="purpose" value="{{ pr.purpose or '' }}">
+      </label>
+      <label>General notes
+        <input name="notes" value="{{ pr.notes or '' }}">
+      </label>
+    </div>
+  </div>
+
+  <!-- ===== Catalogue search ===== -->
+  <div class="card">
+    <h3>Add items from catalogue</h3>
+    <input id="search" placeholder="Type at least 2 characters..."
+           autocomplete="off">
+    <div id="results" class="results"></div>
+  </div>
+
+  <!-- ===== Current lines ===== -->
+  <div class="card">
+    <h3>Request list <span id="line-count" class="chip">0 items</span></h3>
+
+    <table class="table" id="lines-table">
+      <thead>
+        <tr>
+          <th style="width:90px;">Code</th>
+          <th>Item</th>
+          <th style="width:60px;">Unit</th>
+          <th style="width:120px;">Quantity</th>
+          <th>Remark</th>
+          <th style="width:40px;"></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body">
+        {% for l in pr.lines %}
+          {% if l.status == 'Draft' %}
+          <tr data-id="{{ l.item_id }}">
+            <td>{{ l.item.code }}
+              <input type="hidden" name="item_id[]" value="{{ l.item_id }}">
+            </td>
+            <td>{{ l.item.name }}</td>
+            <td>{{ l.item.unit.symbol if l.item.unit else '' }}</td>
+            <td>
+              <input type="number" name="qty[]"
+                     step="{{ '0.001' if l.item.unit and l.item.unit.allows_decimal else '1' }}"
+                     min="{{ '0.001' if l.item.unit and l.item.unit.allows_decimal else '1' }}"
+                     value="{{ l.requested_qty }}"
+                     required style="width:100%;">
+            </td>
+            <td><input name="remark[]" value="{{ l.remarks or '' }}"></td>
+            <td>
+              <button type="button" class="btn small danger remove-btn">×</button>
+            </td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p id="empty-msg" class="empty"
+       {% if pr.lines | selectattr('status', 'equalto', 'Draft') | list %}style="display:none;"{% endif %}>
+      No items yet — search above to add.
+    </p>
+  </div>
+
+  <!-- ===== Attachments (optional) ===== -->
+  <div class="card">
+    <h3>Additional attachments <span class="chip">optional</span></h3>
+    <label>Add more photos, drawings or specifications
+      <input type="file" name="attachments" multiple
+             accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png">
+    </label>
+  </div>
+
+  <div class="submit-bar">
+    <span id="submit-count">0 items</span>
+    <button class="btn primary" type="submit"
+            onclick="return confirm('Resubmit this PR to procurement?');">
+      Resubmit PR
+    </button>
+  </div>
+
+</form>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+const searchInput = document.getElementById('search');
+const resultsBox  = document.getElementById('results');
+const linesBody   = document.getElementById('lines-body');
+const emptyMsg    = document.getElementById('empty-msg');
+const lineCount   = document.getElementById('line-count');
+const submitCount = document.getElementById('submit-count');
+
+const addedIds = new Set();
+document.querySelectorAll('#lines-body tr').forEach(tr => {
+  addedIds.add(parseInt(tr.dataset.id, 10));
+});
+
+const doSearch = debounce(async () => {
+  const q = searchInput.value.trim();
+  if (q.length < 2) { resultsBox.innerHTML = ''; return; }
+  try {
+    const r = await fetch(`/api/catalogue/search?q=${encodeURIComponent(q)}`);
+    const items = await r.json();
+    if (!items.length) {
+      resultsBox.innerHTML = '<div class="result"><small>No matches.</small></div>';
+      return;
+    }
+    resultsBox.innerHTML = items.map(i => {
+      const already = addedIds.has(i.id);
+      return `
+        <div class="result" data-id="${i.id}"
+             data-code="${escapeAttr(i.code)}"
+             data-name="${escapeAttr(i.name)}"
+             data-unit="${escapeAttr(i.unit)}"
+             data-decimal="${i.allows_decimal}">
+          <strong>${escapeHtml(i.name)} ${already ? '✓' : ''}</strong>
+          <small>${escapeHtml(i.code)} · ${escapeHtml(i.unit)} · ${escapeHtml(i.category)}</small>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    resultsBox.innerHTML = '<div class="result"><small>Search error.</small></div>';
+  }
+}, 150);
+searchInput.addEventListener('input', doSearch);
+
+resultsBox.addEventListener('click', e => {
+  const el = e.target.closest('.result');
+  if (!el || !el.dataset.id) return;
+  const id = parseInt(el.dataset.id, 10);
+  if (addedIds.has(id)) {
+    const row = linesBody.querySelector(`tr[data-id="${id}"]`);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('highlight');
+      setTimeout(() => row.classList.remove('highlight'), 1200);
+      row.querySelector('input[name="qty[]"]').focus();
+    }
+    resultsBox.innerHTML = '';
+    searchInput.value = '';
+    searchInput.focus();
+    return;
+  }
+  addLine(id, el.dataset.code, el.dataset.name, el.dataset.unit,
+          el.dataset.decimal === 'true');
+  resultsBox.innerHTML = '';
+  searchInput.value = '';
+  searchInput.focus();
+});
+
+function addLine(id, code, name, unit, decimal) {
+  addedIds.add(id);
+  emptyMsg.style.display = 'none';
+  const step = decimal ? '0.001' : '1';
+  const tr = document.createElement('tr');
+  tr.dataset.id = id;
+  tr.innerHTML = `
+    <td>${escapeHtml(code)}
+      <input type="hidden" name="item_id[]" value="${id}">
+    </td>
+    <td>${escapeHtml(name)}</td>
+    <td>${escapeHtml(unit)}</td>
+    <td>
+      <input type="number" name="qty[]" step="${step}" min="${step}"
+             required style="width:100%;">
+    </td>
+    <td><input name="remark[]" placeholder="optional"></td>
+    <td><button type="button" class="btn small danger remove-btn">×</button></td>`;
+  linesBody.appendChild(tr);
+  tr.querySelector('input[name="qty[]"]').focus();
+  refreshCount();
+}
+
+linesBody.addEventListener('click', e => {
+  if (!e.target.classList.contains('remove-btn')) return;
+  const tr = e.target.closest('tr');
+  const id = parseInt(tr.dataset.id, 10);
+  addedIds.delete(id);
+  tr.remove();
+  refreshCount();
+  if (linesBody.children.length === 0) emptyMsg.style.display = 'block';
+});
+
+function refreshCount() {
+  const n = linesBody.children.length;
+  lineCount.textContent   = `${n} item${n === 1 ? '' : 's'}`;
+  submitCount.textContent = `${n} item${n === 1 ? '' : 's'}`;
+}
+refreshCount();
+
+document.getElementById('pr-form').addEventListener('submit', e => {
+  if (linesBody.children.length === 0) {
+    e.preventDefault();
+    alert('Add at least one item before resubmitting.');
+  }
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+</script>
+
+<style>
+  tr.highlight { animation: pulse 1.2s ease-in-out; }
+  @keyframes pulse {
+    0%,100% { background: transparent; }
+    50%     { background: #fff3cd; }
+  }
+  .submit-bar {
+    position: sticky; bottom: 0;
+    background: #fff; border: 1px solid #D9D2C3;
+    border-radius: 10px; padding: 12px 18px;
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 -6px 18px rgba(0,0,0,.06); margin-bottom: 12px;
+  }
+</style>
+{% endblock %}

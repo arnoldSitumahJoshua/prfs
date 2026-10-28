@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Bulk Import{% endblock %}
+{% block heading %}Bulk Import Items{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <h3>Upload Excel or CSV</h3>
+  <p style="color:#6B665B;font-size:13px;">
+    Columns required: <code>code</code>, <code>name</code>.
+    Optional: <code>description</code>, <code>category</code>, <code>unit</code>, <code>keywords</code>.
+    Existing codes will be skipped.
+  </p>
+
+  <form method="POST" enctype="multipart/form-data">
+    <label>File (.xlsx or .csv)
+      <input type="file" name="file" accept=".xlsx,.csv" required>
+    </label>
+    <button class="btn primary" type="submit">Upload &amp; import</button>
+  </form>
+
+  <details style="margin-top:16px;color:#6B665B;font-size:13px;">
+    <summary>Show sample CSV</summary>
+    <pre style="background:#f3efe6;padding:12px;border-radius:6px;">
+code,name,category,unit,description,keywords
+CEM-003,White Cement 42.5,Cement,Bag,Fine white cement,white cement
+STL-013,Steel Rebar 8mm,Steel,Piece,Small rebar,rebar 8mm y8
+    </pre>
+  </details>
+</div>
+
+{% if errors %}
+<div class="card" style="background:#f8e6e3;border-color:#f0c8c1;">
+  <h3 style="color:#9B3D2E;">Import errors</h3>
+  <ul style="color:#9B3D2E;font-size:13px;">
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% endblock %}

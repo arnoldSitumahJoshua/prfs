@@ -1,0 +1,53 @@
+{# Reusable pagination bar. Requires `pager` dict from _paginate(). #}
+{% if pager and pager.total is defined and pager.total > 0 %}
+<div class="card" style="display:flex;justify-content:space-between;
+                         align-items:center;flex-wrap:wrap;gap:12px;
+                         padding:12px 16px;">
+  <div style="font-size:13px;color:#6B665B;">
+    Showing
+    <strong>{{ ((pager.page - 1) * pager.per_page) + 1 }}</strong>
+    –
+    <strong>{{ ((pager.page - 1) * pager.per_page) + (pager['items']|length) }}</strong>
+    of <strong>{{ pager.total }}</strong>
+    &nbsp;·&nbsp; Page {{ pager.page }} of {{ pager.total_pages }}
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    {# Page size selector — preserves existing query params #}
+    <form method="GET" style="display:flex;align-items:center;gap:6px;margin:0;">
+      {% for k, v in request.args.items() %}
+        {% if k not in ('page', 'per_page') %}
+          <input type="hidden" name="{{ k }}" value="{{ v }}">
+        {% endif %}
+      {% endfor %}
+      <label style="font-size:12px;color:#6B665B;margin:0;">Rows</label>
+      <select name="per_page" style="width:auto;"
+              onchange="this.form.submit()">
+        {% for n in [5, 10, 25, 50, 100, 200] %}
+          <option value="{{ n }}" {% if pager.per_page == n %}selected{% endif %}>{{ n }}</option>
+        {% endfor %}
+      </select>
+    </form>
+
+    {% if pager.has_prev %}
+      <a class="btn small"
+         href="{{ url_for(request.endpoint,
+                          **dict(request.args.to_dict(), page=pager.page-1)) }}">
+        ← Prev
+      </a>
+    {% else %}
+      <span class="btn small" style="opacity:.4;cursor:not-allowed;">← Prev</span>
+    {% endif %}
+
+    {% if pager.has_next %}
+      <a class="btn small"
+         href="{{ url_for(request.endpoint,
+                          **dict(request.args.to_dict(), page=pager.page+1)) }}">
+        Next →
+      </a>
+    {% else %}
+      <span class="btn small" style="opacity:.4;cursor:not-allowed;">Next →</span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
